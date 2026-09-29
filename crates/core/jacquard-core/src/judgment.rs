@@ -9,7 +9,7 @@
 use crate::swatch::SwatchId;
 
 /// Which of the two presented Renders the Judge preferred.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Verdict {
     /// The Render shown first.
     First,
