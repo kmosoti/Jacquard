@@ -30,6 +30,18 @@ pub const PROBE_ID: &str = "jacquard-probe";
 
 const BROWSER_LOCK: &str = "/tmp/installation-browser.lock";
 
+/// A name no other render or launch in this process uses, so that
+/// concurrent calls never share a directory or an output file.
+fn unique(prefix: &str) -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    format!(
+        "{prefix}-{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    )
+}
+
 /// How long one Chrome launch may take before it is killed.
 pub const LAUNCH_DEADLINE: Duration = Duration::from_secs(60);
 
@@ -93,12 +105,9 @@ impl Chrome {
         lock.lock()
             .map_err(|e| Failure::Unavailable(format!("{BROWSER_LOCK}: {e}")))?;
         std::fs::create_dir_all(&self.scratch).map_err(|e| Failure::Failed(e.to_string()))?;
-        let out_path = self
-            .scratch
-            .join(format!("chrome-{}.out", std::process::id()));
-        let err_path = self
-            .scratch
-            .join(format!("chrome-{}.err", std::process::id()));
+        let launch = unique("chrome");
+        let out_path = self.scratch.join(format!("{launch}.out"));
+        let err_path = self.scratch.join(format!("{launch}.err"));
         let file = |p: &Path| std::fs::File::create(p).map_err(|e| Failure::Failed(e.to_string()));
         let mut child = Command::new(&self.binary)
             .args(&args)
@@ -261,7 +270,7 @@ impl Renderer for Chrome {
                 self.binary.display()
             )));
         }
-        let dir = self.scratch.join(format!("swatch-{}", std::process::id()));
+        let dir = self.scratch.join(unique("swatch"));
         let _ = std::fs::remove_dir_all(&dir);
         for (path, bytes) in &swatch.files {
             let file = dir.join(path);
