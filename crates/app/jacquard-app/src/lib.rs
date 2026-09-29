@@ -15,6 +15,7 @@
 #![forbid(unsafe_code)]
 
 pub mod admission;
+pub mod ranking;
 
 use jacquard_core::check::Outcome;
 use jacquard_core::probe::{self, Finding};

@@ -23,7 +23,8 @@ use serde_json::json;
 
 const USAGE: &str = "usage: jacquard <command>
   render DIR [--viewports audit|WxH,...] [--out DIR]
-  compare DIR-A DIR-B [--viewports ...]
+  compare DIR-A DIR-B [--viewports ...] [--ledger DIR]
+  rank FILE [--seed N]
   admission verify [--set DIR]
   admission run [--set DIR] [--limit N]";
 
@@ -102,10 +103,7 @@ fn render_cmd(args: &mut Vec<String>) -> Result<u8, String> {
     let dir = PathBuf::from(args.first().ok_or("render needs a DIR")?);
     let source = load(&dir)?;
     let id = swatch_id(&source);
-    let hex = id.0.iter().take(6).fold(String::new(), |mut s, b| {
-        let _ = write!(s, "{b:02x}");
-        s
-    });
+    let hex = hex(&id.0[..6]);
     let renders = Chrome::from_env(&scratch())
         .render(&source, &vps)
         .map_err(|e| e.to_string())?;
@@ -122,6 +120,73 @@ fn render_cmd(args: &mut Vec<String>) -> Result<u8, String> {
     ))
 }
 
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().fold(String::new(), |mut s, b| {
+        let _ = write!(s, "{b:02x}");
+        s
+    })
+}
+
+fn rank_cmd(args: &mut Vec<String>) -> Result<u8, String> {
+    let seed =
+        option(args, "--seed").map_or(Ok(0), |s| s.parse::<u64>().map_err(|e| e.to_string()))?;
+    let file = args
+        .first()
+        .ok_or("rank needs a FILE of comparison records")?;
+    let text = std::fs::read_to_string(file).map_err(|e| format!("{file}: {e}"))?;
+    let mut recorded = Vec::new();
+    for (n, line) in text
+        .lines()
+        .enumerate()
+        .filter(|(_, l)| !l.trim().is_empty())
+    {
+        let v: serde_json::Value =
+            serde_json::from_str(line).map_err(|e| format!("{file}:{}: {e}", n + 1))?;
+        if v["record"] != "comparison" {
+            continue;
+        }
+        let verdict = match v["verdict"].as_str() {
+            Some("First") => Verdict::First,
+            Some("Second") => Verdict::Second,
+            Some("Tie") => Verdict::Tie,
+            other => return Err(format!("{file}:{}: verdict {other:?}", n + 1)),
+        };
+        let id = |k: &str| {
+            v[k].as_str()
+                .map(str::to_string)
+                .ok_or(format!("{file}:{}: no `{k}`", n + 1))
+        };
+        recorded.push(jacquard_app::ranking::Recorded {
+            first: id("first")?,
+            second: id("second")?,
+            verdict,
+        });
+    }
+    let rate = jacquard_app::ranking::rating;
+    println!(
+        "{:<5} {:<12} {:>7} {:>18} {:>4}",
+        "rank", "swatch", "rating", "95% interval", "n"
+    );
+    for r in jacquard_app::ranking::rank(&recorded, seed) {
+        let e = r.estimate;
+        let rank = e.rank.map_or_else(|| "-".to_string(), |k| k.to_string());
+        println!(
+            "{rank:<5} {:<12} {:>7.0} [{:>7.0},{:>7.0}] {:>4}{}",
+            r.id.get(..12).unwrap_or(&r.id),
+            rate(e.strength),
+            rate(e.low),
+            rate(e.high),
+            e.comparisons,
+            if e.rank.is_none() {
+                "  below the floor"
+            } else {
+                ""
+            }
+        );
+    }
+    Ok(0)
+}
+
 fn letter(v: Verdict, first: &str, second: &str) -> String {
     match v {
         Verdict::First => first.into(),
@@ -136,18 +201,17 @@ fn compare_cmd(args: &mut Vec<String>) -> Result<u8, String> {
             .as_deref()
             .unwrap_or("1440x900,390x844"),
     ))?;
+    let ledger = option(args, "--ledger").map(|d| FsLedger::new(Path::new(&d)));
     let [a, b] = [0, 1].map(|i| args.get(i).cloned());
     let (a, b) = (
         a.ok_or("compare needs DIR-A")?,
         b.ok_or("compare needs DIR-B")?,
     );
     let chrome = Chrome::from_env(&scratch());
-    let ra = chrome
-        .render(&load(Path::new(&a))?, &vps)
-        .map_err(|e| e.to_string())?;
-    let rb = chrome
-        .render(&load(Path::new(&b))?, &vps)
-        .map_err(|e| e.to_string())?;
+    let (sa, sb) = (load(Path::new(&a))?, load(Path::new(&b))?);
+    let (ida, idb) = (hex(&swatch_id(&sa).0), hex(&swatch_id(&sb).0));
+    let ra = chrome.render(&sa, &vps).map_err(|e| e.to_string())?;
+    let rb = chrome.render(&sb, &vps).map_err(|e| e.to_string())?;
     let judge = ClaudeJudge::from_env(&scratch());
     let c = compare(&judge, &ra, &rb).map_err(|e| e.to_string())?;
     let show = |label: &str, x: &Answer, first: &str, second: &str| {
@@ -160,6 +224,14 @@ fn compare_cmd(args: &mut Vec<String>) -> Result<u8, String> {
     };
     show("A shown first", &c.a_first, "A", "B");
     show("B shown first", &c.b_first, "B", "A");
+    if let Some(ledger) = ledger {
+        for (first, second, answer) in [(&ida, &idb, &c.a_first), (&idb, &ida, &c.b_first)] {
+            let record = json!({"record": "comparison", "first": first, "second": second, "verdict": format!("{:?}", answer.verdict), "model": answer.model, "rubric": judge.rubric_hash()});
+            ledger
+                .append("comparisons", &record.to_string())
+                .map_err(|e| e.to_string())?;
+        }
+    }
     Ok(0)
 }
 
@@ -329,6 +401,7 @@ fn main() -> ExitCode {
     let result = match command.as_str() {
         "render" => render_cmd(&mut args),
         "compare" => compare_cmd(&mut args),
+        "rank" => rank_cmd(&mut args),
         "admission" => admission_cmd(&mut args),
         _ => Err(USAGE.to_string()),
     };
