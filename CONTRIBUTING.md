@@ -23,7 +23,13 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test   --workspace --locked
 ```
 
-Milestone 02 adds `cargo xtask check-layers`, `check-core-purity`, `check-trust-boundary`, `checks --profile fast` and `receipts validate`, each with a fixture it must reject.
+Then the gates, which CI runs on every push through the same command:
+
+```sh
+cargo xtask checks --profile fast --base origin/main
+```
+
+That runs the four commands above plus `check-layers`, `check-core-purity`, `check-trust-boundary` and `receipts validate`, and writes a receipt per check under `target/verification/receipts/`. Each gate prints a stable code per failure and is tested against fixtures under `tests/fixtures/`, one case or more per code ([verification/README.md](verification/README.md)).
 
 ## Where Code Goes
 
