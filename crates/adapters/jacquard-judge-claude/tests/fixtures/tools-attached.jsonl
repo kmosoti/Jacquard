@@ -1,0 +1,2 @@
+{"type": "system", "subtype": "init", "model": "claude-sonnet-5-5", "tools": ["Read"], "mcp_servers": []}
+{"type": "result", "subtype": "success", "is_error": false, "result": "{\"dimensions\":{\"legibility\":\"A\",\"integrity\":\"A\",\"hierarchy\":\"A\",\"consistency\":\"tie\",\"usability\":\"A\"},\"verdict\":\"A\",\"reason\":\"B clips its heading and its text is unreadable.\"}", "modelUsage": {"claude-sonnet-5-5": {}}}
