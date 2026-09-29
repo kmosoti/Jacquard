@@ -1,12 +1,11 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/core/jacquard-core",
-    "crates/ports/jacquard-ports",
-    "crates/app/jacquard-app",
-    "crates/adapters/jacquard-ledger-fs",
-    "crates/bin/jacquard",
-    "crates/bin/jacquard-xtask",
+    "crates/core/*",
+    "crates/ports/*",
+    "crates/app/*",
+    "crates/adapters/*",
+    "crates/bin/*",
 ]
 
 [workspace.package]

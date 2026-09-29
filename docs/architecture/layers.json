@@ -1,13 +1,32 @@
 {
   "version": 1,
   "description": "Layer assignment of every workspace crate. Read by `cargo xtask check-layers` (milestone 02). Edges are allowed only from a layer to one listed under it in `allowed`.",
-  "layers": ["core", "ports", "app", "adapters", "bin"],
+  "layers": [
+    "core",
+    "ports",
+    "app",
+    "adapters",
+    "bin"
+  ],
   "allowed": {
     "core": [],
-    "ports": ["core"],
-    "app": ["core", "ports"],
-    "adapters": ["core", "ports"],
-    "bin": ["core", "ports", "app", "adapters"]
+    "ports": [
+      "core"
+    ],
+    "app": [
+      "core",
+      "ports"
+    ],
+    "adapters": [
+      "core",
+      "ports"
+    ],
+    "bin": [
+      "core",
+      "ports",
+      "app",
+      "adapters"
+    ]
   },
   "crates": {
     "jacquard-core": "core",
@@ -15,6 +34,8 @@
     "jacquard-app": "app",
     "jacquard-ledger-fs": "adapters",
     "jacquard": "bin",
-    "jacquard-xtask": "bin"
+    "jacquard-xtask": "bin",
+    "jacquard-renderer-chrome": "adapters",
+    "jacquard-judge-claude": "adapters"
   }
 }

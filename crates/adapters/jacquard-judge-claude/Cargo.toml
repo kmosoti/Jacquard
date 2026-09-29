@@ -1,0 +1,18 @@
+[package]
+name = "jacquard-judge-claude"
+description = "Judge adapter: Claude Sonnet 5.5 through the Claude CLI, with an isolated context"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64 = "0.22"
+jacquard-core.workspace = true
+jacquard-ports.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[lints]
+workspace = true

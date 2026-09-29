@@ -2,7 +2,7 @@
 
 ## Active Work
 
-**Milestone 02, verification foundation**, on `milestone/02-verification-foundation`: `jacquard-xtask` with `check-layers`, `check-core-purity`, `check-trust-boundary`, the check registry and receipts, fixtures for every failure code, a calibration record, and CI. Next: create the remote and push, then milestone 03.
+**Milestone 03, factory ports**, on `milestone/03-factory-ports`: the five ports, the Chrome renderer with its layout probe, the Claude judge pinned to `claude-sonnet-5-5`, the filesystem ledger, the `jacquard` command line, and the admission set. Sonnet 5.5 was admitted on its first run. Next: milestone 04, ranking.
 
 ## Milestones
 
@@ -10,7 +10,7 @@
 | --- | --- | --- | --- |
 | 01 | architecture-foundation | workspace, layers, contract, glossary, ADR-0000..0003, research digest | landed |
 | 02 | verification-foundation | `jacquard-xtask`: `check-layers`, `check-core-purity`, `check-trust-boundary`, check registry with receipts, fixture negative controls, CI | landed |
-| 03 | factory-ports | Loom, Renderer, Checker, Judge and Ledger ports and their first adapters; Judge admission set | planned |
+| 03 | factory-ports | Loom, Renderer, Checker, Judge and Ledger ports and their first adapters; Judge admission set | landed |
 | 04 | semantic-kernels | Bradley–Terry ranking with reference implementation and metamorphic relations; semantic-mutant corpus | planned |
 | 05 | product-installation | the Installation imported as the first Product from a clean snapshot; its own contract and Checks | planned |
 | 06 | local-filter | llama.cpp with a small VLM answering fixed structured questions, measured against fixtures | planned |
@@ -19,12 +19,19 @@ The remote repository is created after milestone 02, so the first push already r
 
 ## Implemented
 
-- Workspace with six crates across five layers ([hexagon](architecture/hexagon.md), [layers.json](architecture/layers.json)).
-- `jacquard-core`: `Outcome`, `Verdict`, `Judgment`, `Vote`, `DraftId`, `SwatchId`, and the module contracts.
-- `jacquard-xtask`: four gates, the check registry (`verification/checks.toml`), receipts, and `checks --profile fast`, which CI runs on every push. 63 fixture cases; every failure code has one. A hand-injected-defect calibration caught 7 of 9 defects; the 2 survivors are classified in `verification/calibration/2026-09-28-gates.md`.
-- Product contract, glossary, ADR-0000 to ADR-0003, the [design-loops research digest](research/2026-09-28-design-loops/README.md).
+- Workspace across five layers, members globbed by layer ([hexagon](architecture/hexagon.md), [layers.json](architecture/layers.json)).
+- `jacquard-core`: the vocabulary types, viewports, the five probe rules (overflow, clipped text, overlapping text, contrast, target size), and the admission kernel.
+- Ports: Loom, Renderer, Checker, Judge, Ledger. Adapters: `jacquard-ledger-fs`, `jacquard-renderer-chrome`, `jacquard-judge-claude`. The Loom and a process Checker arrive with the first Product.
+- `jacquard render | compare | admission verify | admission run`.
+- The admission set: 25 known-answer pairs, all verified. **Sonnet 5.5 admitted** on 2026-09-28: rubric `5e4b17a93faf026b`, 25 of 25 correct, 0 flipped, all 50 Judgments answered by `claude-sonnet-5-5` ([report](../verification/admission/reports/5e4b17a93faf026b-claude-sonnet-5-5.ndjson)).
+- `jacquard-xtask`: four gates, the check registry with nine checks, receipts, CI.
+- Product contract, glossary, ADR-0000 to ADR-0005, the design-loops research digest.
 
 ## Known Gaps
+
+- The admission set tests mechanical defects only, and Sonnet 5.5 scored at the ceiling. It proves the Judge can see breakage consistently across order; it says nothing about taste. A harder set (subtle hierarchy, spacing and density differences with a known answer) and the owner's Votes are what would measure that.
+- The alias `sonnet` answers as `claude-sonnet-5`; design-workflow agents must pin `claude-sonnet-5-5`, which the Agent tool's model option cannot do.
+- The judge depends on the owner's Claude CLI login; each Judgment costs a few US cents.
 
 - `check-trust-boundary` does not inspect conflict resolutions inside merge commits.
 - Receipts are not signed; a receipt proves structure and that the recorder ran the command.

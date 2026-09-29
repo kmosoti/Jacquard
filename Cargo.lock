@@ -3,6 +3,12 @@
 version = 4
 
 [[package]]
+name = "base64"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -89,7 +95,14 @@ name = "jacquard"
 version = "0.1.0"
 dependencies = [
  "jacquard-app",
+ "jacquard-core",
+ "jacquard-judge-claude",
  "jacquard-ledger-fs",
+ "jacquard-ports",
+ "jacquard-renderer-chrome",
+ "serde",
+ "serde_json",
+ "toml",
 ]
 
 [[package]]
@@ -98,11 +111,25 @@ version = "0.1.0"
 dependencies = [
  "jacquard-core",
  "jacquard-ports",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
 name = "jacquard-core"
 version = "0.1.0"
+
+[[package]]
+name = "jacquard-judge-claude"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "jacquard-core",
+ "jacquard-ports",
+ "serde",
+ "serde_json",
+ "sha2",
+]
 
 [[package]]
 name = "jacquard-ledger-fs"
@@ -117,6 +144,16 @@ name = "jacquard-ports"
 version = "0.1.0"
 dependencies = [
  "jacquard-core",
+]
+
+[[package]]
+name = "jacquard-renderer-chrome"
+version = "0.1.0"
+dependencies = [
+ "jacquard-core",
+ "jacquard-ports",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
