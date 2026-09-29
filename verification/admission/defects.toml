@@ -1,0 +1,23 @@
+# Deterministic defect injections. Each appends its CSS in a <style> element
+# before </head> of a base swatch. `rule` is the probe rule that must fail
+# on the variant and pass on the base (ADR-0005).
+
+[defects.clip-heading]
+rule = "clipped-text"
+css = "h1{white-space:nowrap;overflow:hidden;width:5em}"
+
+[defects.low-contrast]
+rule = "low-contrast"
+css = "main{color:#bdb8ae}.muted{color:#cfcac0}"
+
+[defects.fixed-width]
+rule = "horizontal-overflow"
+css = "main{min-width:1100px}"
+
+[defects.collapsed-lines]
+rule = "overlapping-text"
+css = "h1{margin-bottom:-1.4em}"
+
+[defects.tiny-targets]
+rule = "small-target"
+css = ".btn{min-height:0;padding:0 3px;font-size:10px;line-height:12px}"

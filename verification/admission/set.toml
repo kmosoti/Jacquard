@@ -1,0 +1,154 @@
+# The admission set of ADR-0005: every base with every defect. A pair is valid
+# only if its defect's probe rule passes on the base and fails on the variant
+# at the pair's viewport; `jacquard admission verify` checks every pair.
+
+[[pair]]
+id = "order-status--clip-heading"
+base = "order-status"
+defect = "clip-heading"
+viewport = "390x844"
+
+[[pair]]
+id = "order-status--low-contrast"
+base = "order-status"
+defect = "low-contrast"
+viewport = "1440x900"
+
+[[pair]]
+id = "order-status--fixed-width"
+base = "order-status"
+defect = "fixed-width"
+viewport = "390x844"
+
+[[pair]]
+id = "order-status--collapsed-lines"
+base = "order-status"
+defect = "collapsed-lines"
+viewport = "1440x900"
+
+[[pair]]
+id = "order-status--tiny-targets"
+base = "order-status"
+defect = "tiny-targets"
+viewport = "390x844"
+
+[[pair]]
+id = "pricing--clip-heading"
+base = "pricing"
+defect = "clip-heading"
+viewport = "1440x900"
+
+[[pair]]
+id = "pricing--low-contrast"
+base = "pricing"
+defect = "low-contrast"
+viewport = "390x844"
+
+[[pair]]
+id = "pricing--fixed-width"
+base = "pricing"
+defect = "fixed-width"
+viewport = "390x844"
+
+[[pair]]
+id = "pricing--collapsed-lines"
+base = "pricing"
+defect = "collapsed-lines"
+viewport = "390x844"
+
+[[pair]]
+id = "pricing--tiny-targets"
+base = "pricing"
+defect = "tiny-targets"
+viewport = "1440x900"
+
+[[pair]]
+id = "settings--clip-heading"
+base = "settings"
+defect = "clip-heading"
+viewport = "390x844"
+
+[[pair]]
+id = "settings--low-contrast"
+base = "settings"
+defect = "low-contrast"
+viewport = "1440x900"
+
+[[pair]]
+id = "settings--fixed-width"
+base = "settings"
+defect = "fixed-width"
+viewport = "390x844"
+
+[[pair]]
+id = "settings--collapsed-lines"
+base = "settings"
+defect = "collapsed-lines"
+viewport = "1440x900"
+
+[[pair]]
+id = "settings--tiny-targets"
+base = "settings"
+defect = "tiny-targets"
+viewport = "390x844"
+
+[[pair]]
+id = "article--clip-heading"
+base = "article"
+defect = "clip-heading"
+viewport = "1440x900"
+
+[[pair]]
+id = "article--low-contrast"
+base = "article"
+defect = "low-contrast"
+viewport = "390x844"
+
+[[pair]]
+id = "article--fixed-width"
+base = "article"
+defect = "fixed-width"
+viewport = "390x844"
+
+[[pair]]
+id = "article--collapsed-lines"
+base = "article"
+defect = "collapsed-lines"
+viewport = "390x844"
+
+[[pair]]
+id = "article--tiny-targets"
+base = "article"
+defect = "tiny-targets"
+viewport = "1440x900"
+
+[[pair]]
+id = "incident--clip-heading"
+base = "incident"
+defect = "clip-heading"
+viewport = "390x844"
+
+[[pair]]
+id = "incident--low-contrast"
+base = "incident"
+defect = "low-contrast"
+viewport = "1440x900"
+
+[[pair]]
+id = "incident--fixed-width"
+base = "incident"
+defect = "fixed-width"
+viewport = "390x844"
+
+[[pair]]
+id = "incident--collapsed-lines"
+base = "incident"
+defect = "collapsed-lines"
+viewport = "1440x900"
+
+[[pair]]
+id = "incident--tiny-targets"
+base = "incident"
+defect = "tiny-targets"
+viewport = "390x844"
+

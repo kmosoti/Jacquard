@@ -51,3 +51,9 @@ command = "cargo xtask receipts validate"
 what = "every committed receipt names a registered check, its command and a supported outcome"
 unchecked = "receipts are not signed; a receipt proves structure, not that the command ran"
 profile = "fast"
+
+[checks.admission-set]
+command = "cargo run --quiet --package jacquard -- admission verify"
+what = "every admission pair is a known answer: its defect's probe rule passes on the base and fails on the variant (ADR-0005)"
+unchecked = "only the pair's own rule is asserted per pair; that bases are clean on every rule is shown by `jacquard render`, not asserted; Chrome versions and fonts differ between machines"
+profile = "fast"
