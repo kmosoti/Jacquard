@@ -1,0 +1,13 @@
+[package]
+name = "jacquard-ports"
+description = "The contracts at the factory's edges: loom, renderer, checker, judge, ledger"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+jacquard-core.workspace = true
+
+[lints]
+workspace = true

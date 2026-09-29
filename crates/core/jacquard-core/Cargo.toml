@@ -1,0 +1,12 @@
+[package]
+name = "jacquard-core"
+description = "The domain of the UI factory: drafts, swatches, checks, judgments, votes and rankings, as pure data and pure functions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

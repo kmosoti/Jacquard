@@ -1,0 +1,30 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/core/jacquard-core",
+    "crates/ports/jacquard-ports",
+    "crates/app/jacquard-app",
+    "crates/adapters/jacquard-ledger-fs",
+    "crates/bin/jacquard",
+    "crates/bin/jacquard-xtask",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+publish = false
+
+[workspace.dependencies]
+jacquard-core = { path = "crates/core/jacquard-core" }
+jacquard-ports = { path = "crates/ports/jacquard-ports" }
+jacquard-app = { path = "crates/app/jacquard-app" }
+jacquard-ledger-fs = { path = "crates/adapters/jacquard-ledger-fs" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"

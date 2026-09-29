@@ -1,0 +1,11 @@
+# Purity policy for crates/core/. Read by `cargo xtask check-core-purity`
+# (milestone 02). Until that gate exists this file is the declaration.
+#
+# A core crate is no_std, forbids unsafe code, has no build script, and takes
+# external dependencies only from the allowlist below. It never reads the
+# clock, the environment, the filesystem, the network, process identity,
+# randomness, threads, or global mutable state. Effects are values the
+# application layer performs.
+
+[allow]
+crates = []
