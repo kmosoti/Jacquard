@@ -22,7 +22,7 @@ Order of authority: product contract, accepted ADRs, architecture views, current
 
 ## Models
 
-Every agent in the design workflow (weaving, critique, judging, visual review, mockups) runs **Claude Sonnet 5.5** and nothing else. Sonnet is the sole Judge ([ADR-0002](docs/decisions/ADR-0002-sonnet-sole-judge.md)). Small local models may answer fixed structured questions as a filter; they never rank. Repository and tooling work is not the design workflow and follows the owner's usual model choice.
+Every agent in the design workflow (weaving, critique, judging, visual review, mockups) runs **Claude Sonnet 5.5** and nothing else, pinned as `claude-sonnet-5-5`. Never use the alias `sonnet`: on 2026-09-28 it answered as `claude-sonnet-5` ([ADR-0004](docs/decisions/ADR-0004-factory-ports.md)). Sonnet is the sole Judge ([ADR-0002](docs/decisions/ADR-0002-sonnet-sole-judge.md)). Small local models may answer fixed structured questions as a filter; they never rank. Repository and tooling work is not the design workflow and follows the owner's usual model choice.
 
 ## Commands
 
