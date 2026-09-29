@@ -1,0 +1,10 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/fx-core",
+    "crates/fx-ports",
+    "crates/fx-app",
+    "crates/fx-store",
+    "crates/fx-cli",
+    "crates/fx-extra",
+]

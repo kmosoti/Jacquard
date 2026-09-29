@@ -1,0 +1,9 @@
+[package]
+name = "fx-store"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+fx-core = { path = "../fx-core" }
+fx-ports = { path = "../fx-ports" }

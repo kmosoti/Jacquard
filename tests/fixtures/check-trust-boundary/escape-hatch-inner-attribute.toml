@@ -1,0 +1,11 @@
+expected = ["escape-hatch-added"]
+
+[commit]
+id = "escape-hatch-inner-attribute"
+message = """
+Silence a module
+"""
+paths = ["crates/core/jacquard-core/src/rank.rs"]
+added = [
+    ["crates/core/jacquard-core/src/rank.rs", "#![allow(unused)]"],
+]

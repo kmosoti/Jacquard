@@ -1,0 +1,11 @@
+expected = ["escape-hatch-added"]
+
+[commit]
+id = "escape-hatch-mutant-skip"
+message = """
+Skip a mutant
+"""
+paths = ["crates/core/jacquard-core/src/rank.rs"]
+added = [
+    ["crates/core/jacquard-core/src/rank.rs", "#[mutants::skip]"],
+]

@@ -1,0 +1,11 @@
+expected = ["escape-hatch-added", "undeclared-oracle-change"]
+
+[commit]
+id = "escape-hatch-ignored-test"
+message = """
+Skip a failing test
+"""
+paths = ["tests/gates.rs"]
+added = [
+    ["tests/gates.rs", "#[ignore]"],
+]

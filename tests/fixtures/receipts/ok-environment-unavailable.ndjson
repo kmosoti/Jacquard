@@ -1,0 +1,1 @@
+{"version": 1, "check_id": "cargo-test", "command": "cargo test --workspace --locked", "revision": "0123456789abcdef0123456789abcdef01234567", "dirty": false, "toolchain": "rustc 1.98.0 (88d9e12ae 2026-08-18)", "outcome": "environment-unavailable", "exit_code": null, "output_sha256": null, "started_unix": 1790000000, "duration_ms": 1000}

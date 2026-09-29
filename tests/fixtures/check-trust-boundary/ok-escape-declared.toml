@@ -1,0 +1,14 @@
+expected = []
+
+[commit]
+id = "ok-escape-declared"
+message = """
+Ignore a slow test
+
+Trust-Boundary: verifier
+Trust-Boundary: escape-hatch
+"""
+paths = ["tests/slow.rs"]
+added = [
+    ["tests/slow.rs", "#[ignore = \"slow\"]"],
+]

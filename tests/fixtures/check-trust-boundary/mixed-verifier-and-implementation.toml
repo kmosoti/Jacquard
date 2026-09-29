@@ -1,0 +1,10 @@
+expected = ["mixed-oracle-and-implementation"]
+
+[commit]
+id = "mixed-verifier-and-implementation"
+message = """
+Fix and re-pin
+
+Trust-Boundary: verifier
+"""
+paths = ["tests/gates.rs", "crates/core/jacquard-core/src/rank.rs"]

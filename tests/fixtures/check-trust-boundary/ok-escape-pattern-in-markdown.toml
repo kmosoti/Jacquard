@@ -1,0 +1,11 @@
+expected = []
+
+[commit]
+id = "ok-escape-pattern-in-markdown"
+message = """
+Document the patterns
+"""
+paths = ["docs/guide.md"]
+added = [
+    ["docs/guide.md", "Never add #[ignore] silently."],
+]

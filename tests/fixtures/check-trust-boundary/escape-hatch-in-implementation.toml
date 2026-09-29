@@ -1,0 +1,11 @@
+expected = ["escape-hatch-added"]
+
+[commit]
+id = "escape-hatch-in-implementation"
+message = """
+Silence a lint
+"""
+paths = ["crates/core/jacquard-core/src/rank.rs"]
+added = [
+    ["crates/core/jacquard-core/src/rank.rs", "#[allow(clippy::pedantic)]"],
+]

@@ -1,0 +1,11 @@
+expected = []
+
+[commit]
+id = "ok-both-declared"
+message = """
+Pin a rule and its gate
+
+Trust-Boundary: specification
+Trust-Boundary: verifier
+"""
+paths = ["docs/PRODUCT-CONTRACT.md", "tests/x.rs"]

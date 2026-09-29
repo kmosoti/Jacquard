@@ -1,0 +1,8 @@
+expected = ["undeclared-oracle-change"]
+
+[commit]
+id = "undeclared-layers-policy"
+message = """
+Move a crate
+"""
+paths = ["docs/architecture/layers.json"]

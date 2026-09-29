@@ -1,0 +1,8 @@
+expected = ["undeclared-oracle-change"]
+
+[commit]
+id = "undeclared-purity-policy-under-crates"
+message = """
+Allow a crate
+"""
+paths = ["crates/core/PURITY.toml"]

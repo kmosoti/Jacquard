@@ -1,0 +1,13 @@
+expected = []
+
+[commit]
+id = "ok-escape-pattern-in-fixture"
+message = """
+Add a fixture
+
+Trust-Boundary: verifier
+"""
+paths = ["tests/fixtures/x/src/lib.rs"]
+added = [
+    ["tests/fixtures/x/src/lib.rs", "#![allow(dead_code)]"],
+]

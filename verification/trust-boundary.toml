@@ -1,0 +1,38 @@
+# The protected sets of ADR-0001, read by `cargo xtask check-trust-boundary`.
+# A path is classified by the first set that matches, in the order
+# specification, verifier, implementation. An entry ending in `/` is a
+# directory prefix; any other entry is an exact path. Changing this file is
+# itself a verifier change.
+
+[classes]
+specification = [
+    "docs/PRODUCT-CONTRACT.md",
+    "docs/decisions/",
+    "docs/architecture/layers.json",
+    "crates/core/PURITY.toml",
+]
+verifier = [
+    "crates/bin/jacquard-xtask/",
+    "tests/",
+    "verification/",
+    ".github/workflows/",
+    ".cargo/",
+    "Cargo.toml",
+    "rust-toolchain.toml",
+]
+implementation = ["crates/"]
+
+[escape_hatch]
+extensions = ["rs"]
+# Fixtures hold defects on purpose; they are declared by the verifier commit
+# that adds them.
+skip = ["tests/fixtures/"]
+patterns = [
+    "#[ignore",
+    "#[allow(",
+    "#![allow(",
+    "#[expect(",
+    "#![expect(",
+    "#[mutants::skip",
+    "#[cfg(any())]",
+]

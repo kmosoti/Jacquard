@@ -1,0 +1,10 @@
+expected = ["mixed-oracle-and-implementation"]
+
+[commit]
+id = "mixed-specification-and-implementation"
+message = """
+Decide and do
+
+Trust-Boundary: specification
+"""
+paths = ["docs/decisions/ADR-0009-x.md", "crates/app/jacquard-app/src/lib.rs"]

@@ -1,0 +1,11 @@
+expected = []
+
+[commit]
+id = "ok-implementation"
+message = """
+Estimate the ranking
+"""
+paths = ["crates/core/jacquard-core/src/rank.rs"]
+added = [
+    ["crates/core/jacquard-core/src/rank.rs", "pub fn rank() {}"],
+]

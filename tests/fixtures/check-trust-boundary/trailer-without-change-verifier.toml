@@ -1,0 +1,10 @@
+expected = ["trailer-without-change"]
+
+[commit]
+id = "trailer-without-change-verifier"
+message = """
+Tidy docs
+
+Trust-Boundary: verifier
+"""
+paths = ["docs/CURRENT.md"]
