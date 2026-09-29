@@ -241,3 +241,25 @@ fn check_trust_boundary_reads_git() {
     assert!(err.contains("unresolved-base"), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// The mutant harness against its fixture corpus: one entry per result, each
+/// of which must come out as the corpus's `expected` table says, so every
+/// code of the harness is shown able to appear.
+#[test]
+fn mutants_semantic_fixtures() {
+    use jacquard_xtask::mutants;
+    let dir = fixtures("mutants");
+    let corpus = mutants::Corpus::load(&dir.join("corpus.toml")).expect("corpus");
+    let mut results = std::collections::BTreeMap::new();
+    let findings = mutants::run(&dir, &dir.join("corpus.toml"), |id, result| {
+        results.insert(id.to_string(), result.to_string());
+    })
+    .expect("harness ran");
+    assert_eq!(results, corpus.expected, "{findings:#?}");
+    let reported: BTreeSet<String> = findings.iter().map(|f| f.code.to_string()).collect();
+    let all: BTreeSet<String> = mutants::CODES.iter().map(|c| (*c).to_string()).collect();
+    assert_eq!(
+        reported, all,
+        "every mutants code needs a fixture that produces it"
+    );
+}

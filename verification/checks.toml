@@ -57,3 +57,9 @@ command = "cargo run --quiet --package jacquard -- admission verify"
 what = "every admission pair is a known answer: its defect's probe rule passes on the base and fails on the variant (ADR-0005)"
 unchecked = "only the pair's own rule is asserted per pair; that bases are clean on every rule is shown by `jacquard render`, not asserted; Chrome versions and fonts differ between machines"
 profile = "fast"
+
+[checks.mutants-semantic]
+command = "cargo xtask mutants semantic"
+what = "every wrong behavior in tests/semantic-mutants/corpus.toml is caught by its named test, which passes without it (ADR-0007)"
+unchecked = "only the wrong behaviors the corpus names; generic mutation coverage is a scheduled calibration, not this check"
+profile = "fast"

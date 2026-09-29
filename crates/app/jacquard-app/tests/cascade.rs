@@ -214,13 +214,34 @@ fn swatch_identity_is_content() {
         &[("index.html", b"<p>hi!</p>"), ("a.css", b"p{}")],
     );
     assert_ne!(swatch_id(&a), swatch_id(&edited));
-    let shifted = source(
-        "index.html",
-        &[("index.html", b"<p>hi</p>a.css"), ("", b"p{}")],
-    );
+    // Without length prefixes both would hash the bytes "x", "ab", "c" and
+    // "x", "a", "bc" as the same stream "xabc".
+    let split_one_way = source("x", &[("ab", b"c")]);
+    let split_other_way = source("x", &[("a", b"bc")]);
     assert_ne!(
-        swatch_id(&a),
-        swatch_id(&shifted),
+        swatch_id(&split_one_way),
+        swatch_id(&split_other_way),
         "length prefixes keep boundaries"
     );
+}
+
+#[test]
+fn ranking_by_id_orders_strongest_first_and_ignores_record_naming_order() {
+    use jacquard_app::ranking::{Recorded, rank, rating};
+    let rec = |a: &str, b: &str, v| Recorded {
+        first: a.into(),
+        second: b.into(),
+        verdict: v,
+    };
+    let mut records = Vec::new();
+    for _ in 0..10 {
+        records.push(rec("zeta", "alpha", Verdict::First));
+        records.push(rec("alpha", "zeta", Verdict::Second));
+    }
+    let ranked = rank(&records, 1);
+    assert_eq!(ranked[0].id, "zeta");
+    assert_eq!(ranked[0].estimate.rank, Some(1));
+    let flipped: Vec<_> = records.iter().rev().cloned().collect();
+    assert_eq!(rank(&flipped, 1), ranked);
+    assert!((rating(1.0)).abs() < 1e-12 && (rating(10.0) - 400.0).abs() < 1e-9);
 }

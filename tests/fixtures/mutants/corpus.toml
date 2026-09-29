@@ -1,0 +1,70 @@
+# Negative controls for `mutants semantic`: one case per result. The
+# `expected` table maps each id to the code the harness must report.
+
+[expected]
+caught = "caught"
+equivalent = "mutant-survived"
+absent-text = "mutant-not-applicable"
+absent-test = "mutant-test-missing"
+does-not-compile = "mutant-unviable"
+failing-baseline = "mutant-baseline-failed"
+
+[[mutant]]
+id = "caught"
+invariant = "double doubles"
+file = "crates/fx/src/lib.rs"
+find = "x * 2"
+replace = "x + 2"
+package = "fx"
+test = "t"
+name = "doubles"
+
+[[mutant]]
+id = "equivalent"
+invariant = "double doubles"
+file = "crates/fx/src/lib.rs"
+find = "x * 2"
+replace = "x << 1"
+package = "fx"
+test = "t"
+name = "doubles"
+
+[[mutant]]
+id = "absent-text"
+invariant = "double doubles"
+file = "crates/fx/src/lib.rs"
+find = "x * 3"
+replace = "x * 4"
+package = "fx"
+test = "t"
+name = "doubles"
+
+[[mutant]]
+id = "absent-test"
+invariant = "double doubles"
+file = "crates/fx/src/lib.rs"
+find = "x * 2"
+replace = "x + 2"
+package = "fx"
+test = "t"
+name = "no_such_test"
+
+[[mutant]]
+id = "does-not-compile"
+invariant = "half halves"
+file = "crates/fx/src/lib.rs"
+find = "x / 2"
+replace = "x / "
+package = "fx"
+test = "t"
+name = "halves"
+
+[[mutant]]
+id = "failing-baseline"
+invariant = "half rounds up"
+file = "crates/fx/src/lib.rs"
+find = "x / 2"
+replace = "x / 3"
+package = "fx"
+test = "t"
+name = "broken"

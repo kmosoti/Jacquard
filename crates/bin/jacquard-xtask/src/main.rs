@@ -8,7 +8,7 @@ use std::process::ExitCode;
 
 use jacquard_xtask::finding::{self, Finding};
 use jacquard_xtask::registry::Registry;
-use jacquard_xtask::{layers, purity, receipts, repo_root, trust};
+use jacquard_xtask::{layers, mutants, purity, receipts, repo_root, trust};
 
 const USAGE: &str = "usage: cargo xtask <command>
   check-layers                      [--root DIR]
@@ -16,7 +16,8 @@ const USAGE: &str = "usage: cargo xtask <command>
   check-trust-boundary --base REF   [--root DIR]
   receipts validate                 [--dir DIR]
   receipts record CHECK-ID --out FILE -- COMMAND...
-  checks --profile NAME [--base REF] [--out FILE]";
+  checks --profile NAME [--base REF] [--out FILE]
+  mutants semantic                  [--corpus FILE]";
 
 fn option(args: &mut Vec<String>, name: &str) -> Option<String> {
     let at = args.iter().position(|a| a == name)?;
@@ -113,6 +114,17 @@ fn main() -> ExitCode {
                 println!("ERROR {message}");
                 2
             })
+        }
+        "mutants" if args.first().map(String::as_str) == Some("semantic") => {
+            args.remove(0);
+            let corpus = option(&mut args, "--corpus").map_or_else(
+                || root.join("tests/semantic-mutants/corpus.toml"),
+                PathBuf::from,
+            );
+            gate(
+                "SURVIVED",
+                mutants::run(&root, &corpus, |id, result| eprintln!("{id}: {result}")),
+            )
         }
         "checks" => checks(&root, &mut args).unwrap_or_else(|message| {
             println!("ERROR {message}");

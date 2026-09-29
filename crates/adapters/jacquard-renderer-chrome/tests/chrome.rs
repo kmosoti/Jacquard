@@ -140,3 +140,21 @@ fn a_missing_entry_is_a_render_failure() {
     };
     assert!(chrome.render(&source, &[phone()]).is_err());
 }
+
+#[test]
+fn a_page_that_received_another_viewport_is_refused() {
+    use jacquard_renderer_chrome::read_probe;
+    let report = |w: u32, h: u32| {
+        format!(
+            r#"<html><head><script type="application/json" id="jacquard-probe">{{"viewport_width":{w},"viewport_height":{h},"document_width":{w},"clipped":[],"overlaps":[],"contrast":[],"targets":[]}}</script></head></html>"#
+        )
+    };
+    assert!(read_probe(&report(390, 844), phone()).is_ok());
+    let err = read_probe(&report(500, 757), phone())
+        .expect_err("the dump-dom default viewport is refused");
+    assert!(err.to_string().contains("received 500x757"), "{err}");
+    assert!(
+        read_probe("<html></html>", phone()).is_err(),
+        "no report is a failure"
+    );
+}
