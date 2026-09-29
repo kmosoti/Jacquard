@@ -17,6 +17,7 @@ Every gate prints a stable code per failure and is tested against fixtures under
 | `check-layers` | `FORBIDDEN` | `unassigned-crate`, `stale-assignment`, `unknown-layer`, `forbidden-edge` |
 | `check-core-purity` | `IMPURE` | `core-dependency-denied`, `core-build-script`, `core-not-no-std`, `core-unsafe-not-forbidden`, `core-uses-std` |
 | `check-trust-boundary` | `UNDECLARED` | `undeclared-oracle-change`, `mixed-oracle-and-implementation`, `escape-hatch-added`, `trailer-without-change`, `unknown-trust-boundary-class`; an unresolvable base is `gate-could-not-run` |
+| `mutants semantic` | `SURVIVED` | `mutant-survived`, `mutant-not-applicable`, `mutant-test-missing`, `mutant-baseline-failed`, `mutant-unviable` |
 | `receipts validate` | `REJECTED` | `receipt-malformed`, `receipt-unregistered-check`, `receipt-command-mismatch`, `receipt-passed-without-evidence`, `receipt-unknown-outcome` |
 
 A gate that cannot run prints `ERROR [gate-could-not-run]` and exits 2.

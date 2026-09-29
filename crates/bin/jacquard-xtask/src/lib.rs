@@ -7,6 +7,7 @@
 
 pub mod finding;
 pub mod layers;
+pub mod mutants;
 pub mod purity;
 pub mod receipts;
 pub mod registry;

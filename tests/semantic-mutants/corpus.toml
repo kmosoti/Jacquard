@@ -1,0 +1,161 @@
+# The semantic-mutant corpus of ADR-0007. Each entry is one wrong behavior
+# an invariant forbids, as a patch whose `find` text occurs exactly once,
+# and the one test that must fail against it. A surviving mutant is a test
+# to strengthen, never an entry to weaken or remove.
+
+# --- Admission (ADR-0005) ---
+
+[[mutant]]
+id = "admission-tie-counts-correct"
+invariant = "ADR-0005: a tie on a known answer is wrong"
+file = "crates/core/jacquard-core/src/admission.rs"
+find = "(Verdict::First, Verdict::Second) => Class::Correct,"
+replace = "(Verdict::First, Verdict::Second) | (Verdict::Tie, Verdict::Tie) => Class::Correct,"
+package = "jacquard-core"
+test = "admission"
+name = "the_truth_table_of_adr_0005"
+
+[[mutant]]
+id = "admission-accuracy-exclusive"
+invariant = "ADR-0005: accuracy of exactly 0.90 is admitted"
+file = "crates/core/jacquard-core/src/admission.rs"
+find = ">= u64::from(num) * u64::from(total)"
+replace = "> u64::from(num) * u64::from(total)"
+package = "jacquard-core"
+test = "admission"
+name = "accuracy_boundary_is_inclusive_at_ninety_percent"
+
+[[mutant]]
+id = "admission-flip-rate-exclusive"
+invariant = "ADR-0005: a flip rate of exactly 0.10 is admitted"
+file = "crates/core/jacquard-core/src/admission.rs"
+find = "> u64::from(thresholds.flip_rate.0)"
+replace = ">= u64::from(thresholds.flip_rate.0)"
+package = "jacquard-core"
+test = "admission"
+name = "flip_boundary_is_inclusive_at_ten_percent"
+
+# --- Probes (ADR-0004, WCAG 2.2) ---
+
+[[mutant]]
+id = "probe-contrast-loosened"
+invariant = "WCAG 1.4.3: normal text needs 4.5:1"
+file = "crates/core/jacquard-core/src/probe.rs"
+find = "if large { 3.0 } else { 4.5 }"
+replace = "if large { 3.0 } else { 4.0 }"
+package = "jacquard-core"
+test = "probe"
+name = "contrast_thresholds_are_wcag_1_4_3"
+
+[[mutant]]
+id = "probe-inline-not-exempt"
+invariant = "WCAG 2.5.8: targets inline in a sentence are exempt"
+file = "crates/core/jacquard-core/src/probe.rs"
+find = "if !target.inline && ("
+replace = "if ("
+package = "jacquard-core"
+test = "probe"
+name = "target_size_is_wcag_2_5_8"
+
+[[mutant]]
+id = "probe-every-target-exempt"
+invariant = "WCAG 2.5.8: a small target that is not inline fails"
+file = "crates/core/jacquard-core/src/probe.rs"
+find = "if !target.inline && ("
+replace = "if target.inline && ("
+package = "jacquard-core"
+test = "probe"
+name = "target_size_is_wcag_2_5_8"
+
+# --- Judge isolation (ADR-0004) ---
+
+[[mutant]]
+id = "judge-accepts-tools"
+invariant = "ADR-0004: a Judge context with tools or MCP servers attached is a failure"
+file = "crates/adapters/jacquard-judge-claude/src/lib.rs"
+find = 'isolated = Some(empty("tools") && empty("mcp_servers"));'
+replace = "isolated = Some(true);"
+package = "jacquard-judge-claude"
+test = "parse"
+name = "an_unisolated_context_is_a_failure"
+
+[[mutant]]
+id = "judge-hides-model"
+invariant = "ADR-0004: the model that actually answered is recorded"
+file = "crates/adapters/jacquard-judge-claude/src/lib.rs"
+find = 'model: models.join("+"),'
+replace = "model: MODEL.to_string(),"
+package = "jacquard-judge-claude"
+test = "parse"
+name = "another_model_is_reported_not_hidden"
+
+# --- Rendering (ADR-0004) ---
+
+[[mutant]]
+id = "renderer-accepts-wrong-viewport"
+invariant = "ADR-0004: a render whose page received another viewport is refused"
+file = "crates/adapters/jacquard-renderer-chrome/src/lib.rs"
+find = "!= (viewport.width, viewport.height)"
+replace = "== (0, 0)"
+package = "jacquard-renderer-chrome"
+test = "chrome"
+name = "a_page_that_received_another_viewport_is_refused"
+
+# --- The cascade (contract clauses 3 and 6) ---
+
+[[mutant]]
+id = "compare-one-order"
+invariant = "Contract 3: every comparison is presented in both orders"
+file = "crates/app/jacquard-app/src/lib.rs"
+find = "b_first: judge.judge(b, a)?,"
+replace = "b_first: judge.judge(a, b)?,"
+package = "jacquard-app"
+test = "cascade"
+name = "comparisons_ask_in_both_orders"
+
+[[mutant]]
+id = "swatch-id-without-length-prefix"
+invariant = "Contract 6: no two sources share an identity"
+file = "crates/app/jacquard-app/src/lib.rs"
+find = "hash.update((bytes.len() as u64).to_le_bytes());"
+replace = "let _ = bytes.len();"
+package = "jacquard-app"
+test = "cascade"
+name = "swatch_identity_is_content"
+
+# --- Ranking (ADR-0006) ---
+
+[[mutant]]
+id = "rank-ignores-ties"
+invariant = "ADR-0006: a tie scores one half to each side"
+file = "crates/core/jacquard-core/src/rank.rs"
+find = '''
+            Verdict::Tie => {
+                wins[c.first][c.second] += 1;
+                wins[c.second][c.first] += 1;
+            }'''
+replace = '''
+            Verdict::Tie => {}'''
+package = "jacquard-core"
+test = "rank"
+name = "ties_count_half_and_never_reverse_an_order"
+
+[[mutant]]
+id = "rank-below-floor"
+invariant = "ADR-0006: fewer than 15 comparisons is unranked"
+file = "crates/core/jacquard-core/src/rank.rs"
+find = "counts[i] >= FLOOR"
+replace = "counts[i] + FLOOR >= FLOOR"
+package = "jacquard-core"
+test = "rank"
+name = "the_floor_leaves_thin_items_unranked"
+
+[[mutant]]
+id = "rank-depends-on-record-order"
+invariant = "ADR-0006: permuting the records does not change the ranking"
+file = "crates/core/jacquard-core/src/rank.rs"
+find = "canonical.sort_unstable();"
+replace = "let _ = &canonical;"
+package = "jacquard-core"
+test = "rank"
+name = "record_order_does_not_change_the_ranking_bit_for_bit"
