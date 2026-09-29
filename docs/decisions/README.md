@@ -10,3 +10,5 @@ Architecture decision records, numbered in order. Each has Status, Date, Context
 | [0003](ADR-0003-installation-first-product.md) | The Installation is the first Product, imported from a clean snapshot | Accepted |
 | [0004](ADR-0004-factory-ports.md) | The factory's ports and their first adapters | Accepted |
 | [0005](ADR-0005-judge-admission.md) | Judge admission | Accepted |
+| [0006](ADR-0006-ranking.md) | Ranking | Accepted |
+| [0007](ADR-0007-semantic-mutants.md) | Semantic mutants | Accepted |
