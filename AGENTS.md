@@ -35,7 +35,17 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test   --workspace --locked
 ```
 
-A change is complete only when all four pass. Gates (`cargo xtask check-layers`, `check-core-purity`, `check-trust-boundary`, `checks --profile fast`, `receipts validate`) arrive with milestone 02 and join this list then.
+A change is complete only when all four pass, and the gates below pass too. Tooling runs as `cargo xtask <command>`:
+
+```sh
+cargo xtask check-layers                             # the dependency rule over declared and resolved graphs
+cargo xtask check-core-purity                        # crates/core/PURITY.toml: no_std, forbid(unsafe_code), no build script, allowlisted deps, no std
+cargo xtask check-trust-boundary --base origin/main  # every commit declares its oracle changes
+cargo xtask receipts validate                        # every committed receipt names a registered check and a supported outcome
+cargo xtask checks --profile fast --base origin/main # all of the above and the four cargo checks, with receipts under target/
+```
+
+A failure prints a stable code under the gate's prefix: `FORBIDDEN [forbidden-edge]`, `IMPURE [core-uses-std]`, `UNDECLARED [undeclared-oracle-change]`, `REJECTED [receipt-passed-without-evidence]`. A gate that cannot run prints `ERROR [gate-could-not-run]` and exits 2. The full list is in `verification/README.md`; every code has a fixture under `tests/fixtures/` that must produce it. Record a committed receipt with `cargo xtask receipts record <check-id> --out verification/receipts/<file>.ndjson -- <command>`; never write one by hand.
 
 ## Layout
 
@@ -58,7 +68,7 @@ A change is complete only when all four pass. Gates (`cargo xtask check-layers`,
 7. **Determinism.** Swatch identity is a content hash. Nothing that feeds a Check depends on wall-clock time, randomness or iteration order.
 8. **No `unsafe`.** Workspace lints forbid it.
 9. **Tooling is Rust**, in `crates/bin/jacquard-xtask`, run as `cargo xtask`.
-10. **Never weaken a specification to pass a check.** The product contract, `docs/decisions/`, `docs/architecture/layers.json`, `crates/core/PURITY.toml`, `tests/`, `verification/`, the xtask crate, `.github/workflows/`, `.cargo/`, the root `Cargo.toml` and `rust-toolchain.toml` are protected. A commit that touches them carries `Trust-Boundary: specification` or `Trust-Boundary: verifier` and touches no implementation crate; an ignored test, skipped mutant or allowed lint carries `Trust-Boundary: escape-hatch`. Mechanical enforcement lands in milestone 02; the rule holds now.
+10. **Never weaken a specification to pass a check.** The product contract, `docs/decisions/`, `docs/architecture/layers.json`, `crates/core/PURITY.toml`, `tests/`, `verification/`, the xtask crate, `.github/workflows/`, `.cargo/`, the root `Cargo.toml` and `rust-toolchain.toml` are protected. A commit that touches them carries `Trust-Boundary: specification` or `Trust-Boundary: verifier` and touches no implementation crate; an ignored test, skipped mutant or allowed lint carries `Trust-Boundary: escape-hatch`. `cargo xtask check-trust-boundary` enforces it on every push, with the protected list in `verification/trust-boundary.toml`.
 11. **Private material never enters a Product or the history.** Nothing that names a client, a figure under NDA, compensation or a private assessment.
 12. **Record what ran.** Never report a command you did not run as passing; a check that did not run is `NotRun`, a timeout `Inconclusive`. A test you wrote for code you wrote is a regression test unless its oracle comes from outside the code.
 13. **Counterexamples become fixtures**, with what found them, the seed or trace, the contract violated and the fixing commit.

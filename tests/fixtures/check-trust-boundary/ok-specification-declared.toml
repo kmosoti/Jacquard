@@ -1,0 +1,10 @@
+expected = []
+
+[commit]
+id = "ok-specification-declared"
+message = """
+Decide X
+
+Trust-Boundary: specification
+"""
+paths = ["docs/decisions/ADR-0009-x.md", "docs/decisions/README.md"]

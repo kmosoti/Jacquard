@@ -1,0 +1,10 @@
+expected = ["trailer-without-change", "undeclared-oracle-change"]
+
+[commit]
+id = "wrong-class-declared"
+message = """
+Change a check
+
+Trust-Boundary: specification
+"""
+paths = ["verification/checks.toml"]

@@ -1,0 +1,14 @@
+expected = ["trailer-without-change"]
+
+[commit]
+id = "trailer-without-change-escape"
+message = """
+Nothing escaped
+
+Trust-Boundary: verifier
+Trust-Boundary: escape-hatch
+"""
+paths = ["tests/x.rs"]
+added = [
+    ["tests/x.rs", "fn t() {}"],
+]

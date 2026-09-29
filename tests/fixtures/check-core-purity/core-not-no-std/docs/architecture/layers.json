@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "layers": [
+    "core",
+    "ports",
+    "app",
+    "adapters",
+    "bin"
+  ],
+  "allowed": {
+    "core": [],
+    "ports": [
+      "core"
+    ],
+    "app": [
+      "core",
+      "ports"
+    ],
+    "adapters": [
+      "core",
+      "ports"
+    ],
+    "bin": [
+      "core",
+      "ports",
+      "app",
+      "adapters"
+    ]
+  },
+  "crates": {
+    "fx-core": "core",
+    "fx-helper": "adapters"
+  }
+}

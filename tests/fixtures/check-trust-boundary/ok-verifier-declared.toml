@@ -1,0 +1,10 @@
+expected = []
+
+[commit]
+id = "ok-verifier-declared"
+message = """
+Add a gate
+
+Trust-Boundary: verifier
+"""
+paths = ["crates/bin/jacquard-xtask/src/lib.rs", "docs/CURRENT.md", "Cargo.lock"]

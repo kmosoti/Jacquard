@@ -1,0 +1,10 @@
+expected = ["undeclared-oracle-change", "unknown-trust-boundary-class"]
+
+[commit]
+id = "unknown-class"
+message = """
+Decide
+
+Trust-Boundary: spec
+"""
+paths = ["docs/decisions/ADR-0009-x.md"]

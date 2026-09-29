@@ -1,0 +1,53 @@
+# The check registry. A receipt names one of these by `check_id`, and its
+# `command` must begin with the registered command up to the first
+# `<placeholder>`. `cargo xtask checks --profile fast` runs the `fast` set,
+# the set CI runs on every push. Adding, removing or changing a check is a
+# verifier change (AGENTS.md rule 10).
+
+[checks.cargo-fmt]
+command = "cargo fmt --all --check"
+what = "formatting of every workspace target"
+unchecked = "formatting only"
+profile = "fast"
+
+[checks.cargo-check]
+command = "cargo check --workspace --locked --all-targets"
+what = "the workspace compiles with the locked resolution"
+unchecked = "fixture workspaces under tests/fixtures are data and are not compiled"
+profile = "fast"
+
+[checks.cargo-clippy]
+command = "cargo clippy --workspace --all-targets --locked -- -D warnings"
+what = "lints including pedantic, warnings as errors"
+unchecked = "anything a lint cannot see"
+profile = "fast"
+
+[checks.cargo-test]
+command = "cargo test --workspace --locked"
+what = "unit and integration tests, including every gate's negative controls"
+unchecked = "a test written alongside its code is a regression test, not evidence for a property"
+profile = "fast"
+
+[checks.check-layers]
+command = "cargo xtask check-layers"
+what = "the dependency rule of ADR-0000 over the declared and resolved graphs"
+unchecked = "module-level structure inside a crate"
+profile = "fast"
+
+[checks.check-core-purity]
+command = "cargo xtask check-core-purity"
+what = "the purity policy over crates/core: no_std, forbid(unsafe_code), no build script, allowlisted dependencies, no std in sources"
+unchecked = "effects reached through an allowlisted crate; the std scan is syntactic"
+profile = "fast"
+
+[checks.check-trust-boundary]
+command = "cargo xtask check-trust-boundary --base <ref>"
+what = "every non-merge commit since the merge base declares its oracle changes (ADR-0001)"
+unchecked = "whether a declared change weakens anything; the escape-hatch scan is syntactic; changes made while resolving conflicts inside a merge commit are not inspected"
+profile = "fast"
+
+[checks.receipts-validate]
+command = "cargo xtask receipts validate"
+what = "every committed receipt names a registered check, its command and a supported outcome"
+unchecked = "receipts are not signed; a receipt proves structure, not that the command ran"
+profile = "fast"

@@ -1,0 +1,8 @@
+expected = ["undeclared-oracle-change"]
+
+[commit]
+id = "undeclared-specification"
+message = """
+Tweak a decision
+"""
+paths = ["docs/decisions/ADR-0001-x.md"]

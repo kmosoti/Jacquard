@@ -1,0 +1,9 @@
+[package]
+name = "fx-cli"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+fx-app = { path = "../fx-app" }
+fx-store = { path = "../fx-store" }
