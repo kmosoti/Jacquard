@@ -224,8 +224,8 @@ pub fn check_commit(policy: &Policy, commit: &Commit) -> Vec<Finding> {
     findings
 }
 
-/// Reads the non-merge commits from the merge base of `base` and `HEAD` to
-/// `HEAD`, oldest first.
+/// Reads every commit (including merge commits via combined diff) from the
+/// merge base of `base` and `HEAD` to `HEAD`, oldest first.
 ///
 /// # Errors
 ///
@@ -238,12 +238,13 @@ pub fn collect(repo: &Path, base: &str) -> Result<Vec<Commit>, String> {
         .map_err(|_| format!("[unresolved-base] `{base}` does not name a commit"))?;
     let merge_base = git(&["merge-base", base, "HEAD"])?.trim().to_string();
     let range = format!("{merge_base}..HEAD");
-    let ids = git(&["rev-list", "--no-merges", "--reverse", &range])?;
+    let ids = git(&["rev-list", "--reverse", &range])?;
     let mut commits = Vec::new();
     for id in ids.split_whitespace() {
         let message = git(&["log", "-1", "--format=%B", id])?;
         let patch = git(&[
             "diff-tree",
+            "--cc",
             "-r",
             "-p",
             "--root",
@@ -263,21 +264,49 @@ pub fn collect(repo: &Path, base: &str) -> Result<Vec<Commit>, String> {
     Ok(commits)
 }
 
-/// Splits a unified patch into its changed paths and added lines.
+/// Splits a unified or combined (`--cc`) patch into its changed paths and added lines.
 #[must_use]
 pub fn parse_patch(patch: &str) -> (Vec<String>, Vec<(String, String)>) {
     let mut paths = BTreeSet::new();
     let mut added = Vec::new();
     let mut current = String::new();
+    let mut combined_parents: usize = 0;
+    let mut in_hunk = false;
     for line in patch.lines() {
         if let Some(rest) = line.strip_prefix("diff --git a/") {
+            in_hunk = false;
+            combined_parents = 0;
             if let Some((a, b)) = rest.split_once(" b/") {
                 paths.insert(a.to_string());
                 paths.insert(b.to_string());
                 current = b.to_string();
             }
-        } else if let Some(text) = line.strip_prefix('+').filter(|_| !line.starts_with("+++")) {
-            added.push((current.clone(), text.to_string()));
+        } else if let Some(rest) = line
+            .strip_prefix("diff --cc ")
+            .or_else(|| line.strip_prefix("diff --combined "))
+        {
+            in_hunk = false;
+            combined_parents = 2;
+            paths.insert(rest.to_string());
+            current = rest.to_string();
+        } else if line.starts_with("@@") {
+            in_hunk = true;
+            if combined_parents > 0 {
+                let ats = line.bytes().take_while(|&b| b == b'@').count();
+                combined_parents = ats.saturating_sub(1).max(2);
+            }
+        } else if in_hunk && combined_parents == 0 {
+            if let Some(text) = line.strip_prefix('+') {
+                added.push((current.clone(), text.to_string()));
+            }
+        } else if in_hunk
+            && combined_parents > 0
+            && line.len() >= combined_parents
+            && line.as_bytes()[..combined_parents]
+                .iter()
+                .all(|&b| b == b'+')
+        {
+            added.push((current.clone(), line[combined_parents..].to_string()));
         }
     }
     (paths.into_iter().collect(), added)

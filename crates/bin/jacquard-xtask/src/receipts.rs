@@ -54,7 +54,7 @@ pub struct Receipt {
     pub outcome: String,
     /// The process exit code, absent when it did not run or was killed.
     pub exit_code: Option<i32>,
-    /// SHA-256 of standard output, a NUL byte, and standard error.
+    /// SHA-256 of the executed command, standard output, and standard error.
     pub output_sha256: Option<String>,
     /// Seconds since the Unix epoch when the run started.
     pub started_unix: u64,
@@ -166,8 +166,10 @@ pub fn validate_dir(root: &Path, dir: &Path) -> Result<Vec<Finding>, String> {
     Ok(findings)
 }
 
-fn hash(stdout: &[u8], stderr: &[u8]) -> String {
+fn hash(command: &str, stdout: &[u8], stderr: &[u8]) -> String {
     let digest = Sha256::new()
+        .chain_update(command.as_bytes())
+        .chain_update([0u8])
         .chain_update(stdout)
         .chain_update([0u8])
         .chain_update(stderr)
@@ -268,7 +270,7 @@ pub fn run_check(
                 None => "interrupted",
             }
             .to_string();
-            receipt.output_sha256 = Some(hash(&output.stdout, &output.stderr));
+            receipt.output_sha256 = Some(hash(&command, &output.stdout, &output.stderr));
         }
         Err(e) => {
             eprintln!("{}: {e}", argv[0]);
@@ -277,4 +279,21 @@ pub fn run_check(
     }
     receipt.duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
     Ok(receipt)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_hash_binds_command_and_is_never_empty() {
+        let fmt_digest = hash("cargo fmt --all --check", b"", b"");
+        let clippy_digest = hash("cargo clippy --workspace", b"", b"");
+        let with_out = hash("cargo fmt --all --check", b"ok\n", b"");
+        assert!(is_hex(&fmt_digest, 64));
+        assert!(is_hex(&clippy_digest, 64));
+        assert!(is_hex(&with_out, 64));
+        assert_ne!(fmt_digest, clippy_digest);
+        assert_ne!(fmt_digest, with_out);
+    }
 }

@@ -10,6 +10,7 @@ specification = [
     "docs/decisions/",
     "docs/architecture/layers.json",
     "crates/core/PURITY.toml",
+    "products/cockpit/CONTRACT.md",
 ]
 verifier = [
     "crates/bin/jacquard-xtask/",
@@ -20,7 +21,7 @@ verifier = [
     "Cargo.toml",
     "rust-toolchain.toml",
 ]
-implementation = ["crates/"]
+implementation = ["crates/", "products/"]
 
 [escape_hatch]
 extensions = ["rs"]
