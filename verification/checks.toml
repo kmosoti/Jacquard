@@ -63,3 +63,45 @@ command = "cargo xtask mutants semantic"
 what = "every wrong behavior in tests/semantic-mutants/corpus.toml is caught by its named test, which passes without it (ADR-0007)"
 unchecked = "only the wrong behaviors the corpus names; generic mutation coverage is a scheduled calibration, not this check"
 profile = "fast"
+
+[checks.cockpit-fmt]
+command = "cargo fmt --manifest-path products/cockpit/Cargo.toml --all --check"
+what = "formatting of every workspace crate in products/cockpit"
+unchecked = "formatting only"
+profile = "fast"
+
+[checks.cockpit-clippy]
+command = "cargo clippy --manifest-path products/cockpit/Cargo.toml --workspace --all-targets --locked -- -D warnings"
+what = "strict clippy lints (pedantic, forbid unsafe, missing_docs) across products/cockpit"
+unchecked = "anything a static lint cannot observe"
+profile = "fast"
+
+[checks.cockpit-hallmark-wcag]
+command = "cargo test --manifest-path products/cockpit/Cargo.toml -p cockpit-leptos --locked --test hallmark_sloplint"
+what = "Hallmark Floor/Reflex/Ledger CSS layers, OKLCH WCAG 2.2 AA contrast (>= 4.5:1 / >= 3.0:1 + negative control), and semantic SSR Island shell"
+unchecked = "live browser rendering outside SSR HTML and static OKLCH token verification"
+profile = "fast"
+
+[checks.cockpit-idle-runtime]
+command = "cargo test --manifest-path products/cockpit/Cargo.toml -p cockpit-leptos --locked --test store_runtime"
+what = "0 Hz settled idle SSE bridge rule, generic example-cluster DTO invariants, and wiki traversal/RSS/Atom checks"
+unchecked = "browser EventSource network delivery beyond pure Sans-I/O bridge transitions"
+profile = "fast"
+
+[checks.cockpit-workspace-tests]
+command = "cargo test --manifest-path products/cockpit/Cargo.toml --workspace --locked"
+what = "all unit and integration tests across iso-diagram, telemetry-scene, cockpit-wiki, and cockpit-leptos"
+unchecked = "browser hydration beyond SSR and wasm32 compilation"
+profile = "fast"
+
+[checks.cockpit-wasm-hydrate]
+command = "cargo check --manifest-path products/cockpit/Cargo.toml -p cockpit-leptos --no-default-features --features hydrate --target wasm32-unknown-unknown --locked"
+what = "cockpit-leptos compiles cleanly for wasm32-unknown-unknown under the lean hydrate Islands feature profile"
+unchecked = "runtime browser execution of the compiled module"
+profile = "fast"
+
+[checks.cockpit-wasm-budget]
+command = "cargo run --quiet --package jacquard --locked -- product budget --product cockpit"
+what = "wasm-bindgen + wasm-opt -Oz bundle size of cockpit-leptos hydrate Islands target stays <= 250 KiB (256000 B)"
+unchecked = "brotli/gzip network transfer size beyond raw post-wasm-opt bytes"
+profile = "fast"

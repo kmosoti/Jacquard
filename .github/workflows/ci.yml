@@ -23,6 +23,14 @@ jobs:
       - name: Toolchain from rust-toolchain.toml
         run: rustup show active-toolchain || rustup toolchain install
 
+      - name: Install WASM toolchain dependencies (binaryen & wasm-bindgen-cli 0.2.130)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binaryen zstd jq
+          if ! command -v wasm-bindgen >/dev/null 2>&1 || [ "$(wasm-bindgen --version | awk '{print $2}')" != "0.2.130" ]; then
+            cargo install --locked wasm-bindgen-cli --version 0.2.130
+          fi
+
       # The base for check-trust-boundary: the target branch for a pull
       # request, the previous head for a push to the default branch, and the
       # default branch otherwise. The first push of the default branch uses

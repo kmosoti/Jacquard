@@ -159,3 +159,25 @@ replace = "let _ = &canonical;"
 package = "jacquard-core"
 test = "rank"
 name = "record_order_does_not_change_the_ranking_bit_for_bit"
+
+# --- Products (ADR-0008) ---
+
+[[mutant]]
+id = "loom-accepts-a-shell"
+invariant = "ADR-0008: a Loom session with any tool beyond Read, Glob, Grep, Edit and Write is refused"
+file = "crates/adapters/jacquard-loom-claude/src/lib.rs"
+find = "if tools != allowed {"
+replace = "if tools.len() > allowed.len() + 1 {"
+package = "jacquard-loom-claude"
+test = "loom"
+name = "a_shell_an_mcp_server_or_an_error_is_refused"
+
+[[mutant]]
+id = "page-renderer-accepts-wrong-viewport"
+invariant = "ADR-0008: a served page that received another viewport is refused"
+file = "crates/adapters/jacquard-renderer-playwright/src/lib.rs"
+find = "!= (viewport.width, viewport.height)"
+replace = "== (0, 0)"
+package = "jacquard-renderer-playwright"
+test = "parse"
+name = "another_viewport_a_driver_error_or_a_missing_screenshot_fails"
