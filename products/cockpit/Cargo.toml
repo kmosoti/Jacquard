@@ -4,6 +4,7 @@ members = [
     "crates/iso-diagram",
     "crates/telemetry-scene",
     "crates/cockpit-wiki",
+    "crates/cockpit-leptos",
 ]
 
 [workspace.package]
@@ -17,3 +18,9 @@ publish = false
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

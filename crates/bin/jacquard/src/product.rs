@@ -329,7 +329,7 @@ fn check_cmd(name: &str) -> Result<u8, String> {
                 "cockpit-leptos",
                 "--no-default-features",
                 "--features",
-                "csr",
+                "hydrate",
                 "--target",
                 "wasm32-unknown-unknown",
                 "--locked",
@@ -354,6 +354,166 @@ fn check_cmd(name: &str) -> Result<u8, String> {
     Ok(u8::from(failed))
 }
 
+#[derive(Deserialize)]
+struct BudgetFile {
+    bundle: BundleBudget,
+}
+
+#[derive(Deserialize)]
+struct BundleBudget {
+    crate_name: String,
+    features: String,
+    wasm_max_bytes: u64,
+}
+
+fn target_dir_for(dir: &Path) -> Result<PathBuf, String> {
+    let out = Command::new("cargo")
+        .args(["metadata", "--no-deps", "--format-version=1", "--locked"])
+        .current_dir(dir)
+        .output()
+        .map_err(|e| format!("cargo metadata: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "cargo metadata failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    }
+    let meta: Value = serde_json::from_slice(&out.stdout).map_err(|e| e.to_string())?;
+    meta["target_directory"]
+        .as_str()
+        .map(PathBuf::from)
+        .ok_or_else(|| "missing target_directory in cargo metadata".into())
+}
+
+struct TempScratch(PathBuf);
+
+impl Drop for TempScratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+fn command_in_path(bin: &str) -> bool {
+    std::env::var_os("PATH")
+        .is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(bin).is_file()))
+}
+
+fn run_wasm_opt_pipeline(raw_wasm: &Path, out_dir: &Path, stem: &str) -> Result<PathBuf, String> {
+    let raw_out = out_dir.join(format!("{stem}_bg.wasm"));
+    let opt_out = out_dir.join(format!("{stem}_bg.opt.wasm"));
+    if command_in_path("wasm-bindgen") && command_in_path("wasm-opt") {
+        let status = Command::new("wasm-bindgen")
+            .args(["--target", "web", "--no-typescript", "--out-dir"])
+            .arg(out_dir)
+            .arg(raw_wasm)
+            .status()
+            .map_err(|e| format!("wasm-bindgen: {e}"))?;
+        if !status.success() {
+            return Err("wasm-bindgen failed".into());
+        }
+        let status = Command::new("wasm-opt")
+            .args(["-Oz", "--all-features", "-o"])
+            .arg(&opt_out)
+            .arg(&raw_out)
+            .status()
+            .map_err(|e| format!("wasm-opt: {e}"))?;
+        if !status.success() {
+            return Err("wasm-opt failed".into());
+        }
+        return Ok(opt_out);
+    }
+
+    if command_in_path("nix") {
+        let run_nix = |offline: bool| -> Result<std::process::ExitStatus, String> {
+            let mut cmd = Command::new("nix");
+            cmd.arg("shell");
+            if offline {
+                cmd.arg("--offline");
+            }
+            cmd.args([
+                "nixpkgs#wasm-bindgen-cli",
+                "nixpkgs#binaryen",
+                "--command",
+                "sh",
+                "-eu",
+                "-c",
+                "wasm-bindgen --target web --no-typescript --out-dir \"$1\" \"$2\" && wasm-opt -Oz --all-features -o \"$3\" \"$4\"",
+                "--",
+            ])
+            .arg(out_dir)
+            .arg(raw_wasm)
+            .arg(&opt_out)
+            .arg(&raw_out);
+            cmd.status().map_err(|e| format!("nix shell: {e}"))
+        };
+        let status = match run_nix(true) {
+            Ok(st) if st.success() => st,
+            _ => run_nix(false)?,
+        };
+        if !status.success() {
+            return Err("nix wasm-bindgen + wasm-opt pipeline failed".into());
+        }
+        return Ok(opt_out);
+    }
+
+    Err("neither wasm-bindgen+wasm-opt nor nix found in PATH for WASM budget packaging".into())
+}
+
+fn budget_cmd(name: &str) -> Result<u8, String> {
+    let dir = product_dir(name);
+    let budget_path = dir.join("budgets.toml");
+    let raw = std::fs::read_to_string(&budget_path)
+        .map_err(|e| format!("{}: {e}", budget_path.display()))?;
+    let budget: BudgetFile = toml::from_str(&raw).map_err(|e| e.to_string())?;
+    let status = Command::new("cargo")
+        .args([
+            "build",
+            "-p",
+            &budget.bundle.crate_name,
+            "--lib",
+            "--no-default-features",
+            "--features",
+            &budget.bundle.features,
+            "--target",
+            "wasm32-unknown-unknown",
+            "--release",
+            "--locked",
+        ])
+        .current_dir(&dir)
+        .status()
+        .map_err(|e| format!("cargo build wasm32: {e}"))?;
+    if !status.success() {
+        return Err("wasm32 release build failed".into());
+    }
+    let stem = budget.bundle.crate_name.replace('-', "_");
+    let raw_wasm = target_dir_for(&dir)?
+        .join("wasm32-unknown-unknown/release")
+        .join(format!("{stem}.wasm"));
+    let tmp_dir = TempScratch(std::env::temp_dir().join(format!(
+        "jacquard-budget-{}-{}",
+        name,
+        std::process::id()
+    )));
+    std::fs::create_dir_all(&tmp_dir.0).map_err(|e| e.to_string())?;
+    let final_wasm = run_wasm_opt_pipeline(&raw_wasm, &tmp_dir.0, &stem)?;
+    let bytes = std::fs::read(&final_wasm).map_err(|e| format!("{}: {e}", final_wasm.display()))?;
+    if bytes.get(..4) != Some(&[0x00, 0x61, 0x73, 0x6d]) {
+        return Err(format!(
+            "{} missing WASM magic header",
+            final_wasm.display()
+        ));
+    }
+    let actual_bytes = bytes.len() as u64;
+    let max_bytes = budget.bundle.wasm_max_bytes;
+    let passed = actual_bytes <= max_bytes;
+    println!(
+        "wasm-budget ({stem}_bg.wasm): {actual_bytes} B {} {max_bytes} B ({})",
+        if passed { "<=" } else { ">" },
+        if passed { "passed" } else { "FAILED" }
+    );
+    Ok(u8::from(!passed))
+}
+
 /// Dispatches `jacquard product <command> [NAME] ...`.
 pub fn run(args: &mut Vec<String>) -> Result<u8, String> {
     let command = if args.is_empty() {
@@ -373,6 +533,7 @@ pub fn run(args: &mut Vec<String>) -> Result<u8, String> {
         "perf" => perf_cmd(&name, args),
         "weave" => weave_cmd(&name, args),
         "check" => check_cmd(&name),
-        _ => Err("product commands: render --label L | probe [--record] | judge --before L --after L | perf --label L --build B | weave --draft F --out D | check".into()),
+        "budget" => budget_cmd(&name),
+        _ => Err("product commands: render --label L | probe [--record] | judge --before L --after L | perf --label L --build B | weave --draft F --out D | check | budget".into()),
     }
 }

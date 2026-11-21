@@ -1,0 +1,16 @@
+# Acceptance budgets for Jacquard Cockpit (`products/cockpit/CONTRACT.md`)
+
+[bundle]
+crate_name = "cockpit-leptos"
+features = "hydrate"
+wasm_max_bytes = 256000
+
+[contrast]
+wcag_level = "AA"
+normal_text_min = 4.5
+ui_component_min = 3.0
+
+[runtime]
+settled_idle_hz = 0
+hidden_tab_poll_hz = 0
+min_target_css_px = 24

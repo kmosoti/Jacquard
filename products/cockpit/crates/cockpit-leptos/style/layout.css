@@ -1,0 +1,206 @@
+/* Hallmark Cockpit Spatial Layout
+ * 3-column grid-template-areas (236px left rail | minmax(0,1fr) stage | 300px right inspector),
+ * 100dvb viewport height, single-row < 44px topbar, subgrid KPI/Governor strips, container queries.
+ * Zero raw color literals, zero px font sizes, zero !important.
+ */
+@layer layout {
+  .cockpit-shell {
+    display: grid;
+    grid-template-columns: var(--rail-left-width) minmax(0, 1fr) var(--rail-right-width);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      "topbar topbar topbar"
+      "rail-left stage rail-inspector";
+    block-size: 100dvb;
+    inline-size: 100%;
+    overflow: clip;
+    background-color: var(--bg-canvas);
+  }
+
+  .cockpit-topbar {
+    grid-area: topbar;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: safe center;
+    gap: var(--space-3);
+    min-block-size: var(--topbar-min-block);
+    padding-block: var(--space-1);
+    padding-inline: var(--space-3);
+    background-color: var(--bg-rail);
+    border-block-end: 1px solid var(--border);
+  }
+
+  .topbar-brand {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-inline-size: 0;
+  }
+
+  .topbar-telemetry {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-inline-start: auto;
+    min-inline-size: 0;
+  }
+
+  .topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .rail-left {
+    grid-area: rail-left;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    min-block-size: 0;
+    min-inline-size: 0;
+    padding-block: var(--space-3);
+    padding-inline: var(--space-2);
+    background-color: var(--bg-rail);
+    border-inline-end: 1px solid var(--border);
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    overscroll-behavior: contain;
+  }
+
+  .stage-pane {
+    grid-area: stage;
+    container: stage / inline-size;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-block-size: 0;
+    min-inline-size: 0;
+    background-color: var(--bg-stage);
+    overflow: clip;
+  }
+
+  .stage-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: safe center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding-block: var(--space-2);
+    padding-inline: var(--space-4);
+    background-color: var(--bg-surface);
+    border-block-end: 1px solid var(--border);
+  }
+
+  .stage-body {
+    min-block-size: 0;
+    min-inline-size: 0;
+    overflow: auto;
+    scrollbar-gutter: stable;
+    overscroll-behavior: contain;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .inspector-rail {
+    grid-area: rail-inspector;
+    container: inspector / inline-size;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    min-block-size: 0;
+    min-inline-size: 0;
+    padding-block: var(--space-3);
+    padding-inline: var(--space-3);
+    background-color: var(--bg-rail);
+    border-inline-start: 1px solid var(--border);
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    overscroll-behavior: contain;
+  }
+
+  /* Subgrid Governor & KPI strips (aligned title / value / metadata across siblings) */
+  .kpi-strip,
+  .governor-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    grid-auto-rows: auto auto auto;
+    column-gap: var(--space-3);
+    row-gap: var(--space-2);
+  }
+
+  .kpi-cell,
+  .governor-cell {
+    grid-row: span 3;
+    display: grid;
+    /* Same-cascade fallback before subgrid */
+    grid-template-rows: auto 1fr auto;
+    grid-template-rows: subgrid;
+    row-gap: var(--space-1);
+    padding-block: var(--space-2);
+    padding-inline: var(--space-3);
+    background-color: var(--bg-surface);
+    border-block-end: 1px solid var(--border);
+  }
+
+  /* Responsive container adaptations inside stage & inspector */
+  @container stage (inline-size < 42rem) {
+    .kpi-strip,
+    .governor-strip {
+      grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+    }
+
+    .stage-header {
+      padding-inline: var(--space-3);
+    }
+  }
+
+  @container inspector (inline-size < 16rem) {
+    .inspector-meta {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  .stage-panel[hidden] {
+    display: none;
+  }
+
+  /* Density token reactivity via data-density attribute */
+  :where([data-density="compact"]) .app-surface {
+    --pad-cell-block: var(--space-1);
+    --pad-cell-inline: var(--space-2);
+  }
+
+  :where([data-density="spacious"]) .app-surface {
+    --pad-cell-block: var(--space-2);
+    --pad-cell-inline: var(--space-3);
+  }
+
+  /* Narrow viewport reflow (WCAG 1.4.10 Reflow, zero horizontal scroll) */
+  @media (max-width: 64rem) {
+    .cockpit-shell {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto auto minmax(26rem, 1fr) auto;
+      grid-template-areas:
+        "topbar"
+        "rail-left"
+        "stage"
+        "rail-inspector";
+      block-size: auto;
+      min-block-size: 100dvb;
+      overflow: visible;
+    }
+
+    .rail-left {
+      border-inline-end: 0;
+      border-block-end: 1px solid var(--border);
+    }
+
+    .inspector-rail {
+      border-inline-start: 0;
+      border-block-start: 1px solid var(--border);
+    }
+
+    .cockpit-topbar {
+      flex-wrap: wrap;
+    }
+  }
+}
