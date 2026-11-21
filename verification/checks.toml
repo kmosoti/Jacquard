@@ -42,8 +42,8 @@ profile = "fast"
 
 [checks.check-trust-boundary]
 command = "cargo xtask check-trust-boundary --base <ref>"
-what = "every non-merge commit since the merge base declares its oracle changes (ADR-0001)"
-unchecked = "whether a declared change weakens anything; the escape-hatch scan is syntactic; changes made while resolving conflicts inside a merge commit are not inspected"
+what = "every commit (including merge combined diffs) since the merge base declares its oracle changes (ADR-0001)"
+unchecked = "whether a declared change weakens anything; the escape-hatch scan is syntactic"
 profile = "fast"
 
 [checks.receipts-validate]

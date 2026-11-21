@@ -180,9 +180,9 @@ fn commit(dir: &Path, path: &str, text: &str, message: &str) {
 }
 
 /// The collector against a real repository: the root commit is the base and
-/// stays out of range, a merge commit is skipped, an undeclared verifier
-/// change and an escape hatch in implementation are found, and a base that
-/// does not resolve is an error rather than an empty range.
+/// stays out of range, clean merges pass while evil merges (conflict-resolution
+/// edits) are caught, an undeclared verifier change and an escape hatch in
+/// implementation are found, and a base that does not resolve is an error.
 #[test]
 fn check_trust_boundary_reads_git() {
     let dir = std::env::temp_dir().join(format!("jacquard-trust-{}", std::process::id()));
@@ -239,6 +239,33 @@ fn check_trust_boundary_reads_git() {
     );
     let err = trust::run(&dir, "no-such-ref").expect_err("unresolved base fails");
     assert!(err.contains("unresolved-base"), "{err}");
+
+    // An evil merge commit that introduces an undeclared verifier edit and an
+    // escape hatch during merge resolution must be caught by combined diff.
+    let before_evil = git(&dir, &["rev-parse", "HEAD"]).trim().to_string();
+    git(&dir, &["switch", "-q", "-c", "evil-branch"]);
+    commit(&dir, "docs/branch.md", "branch\n", "Branch note");
+    git(&dir, &["switch", "-q", "main"]);
+    commit(&dir, "docs/main.md", "main\n", "Main note");
+    git(
+        &dir,
+        &["merge", "-q", "--no-ff", "--no-commit", "evil-branch"],
+    );
+    std::fs::write(dir.join("tests/evil_merge.rs"), "fn evil() {}\n").expect("write");
+    let lib_rs = dir.join("crates/app/src/evil.rs");
+    std::fs::write(&lib_rs, concat!("#[al", "low(dead_code)]\nfn e() {}\n")).expect("write");
+    git(
+        &dir,
+        &["add", "tests/evil_merge.rs", "crates/app/src/evil.rs"],
+    );
+    git(&dir, &["commit", "-q", "-m", "Merge evil-branch"]);
+    let evil_findings = trust::run(&dir, &before_evil).expect("evil merge gate ran");
+    let evil_codes: Vec<&str> = evil_findings.iter().map(|f| f.code).collect();
+    assert_eq!(
+        evil_codes,
+        ["escape-hatch-added", "undeclared-oracle-change"],
+        "{evil_findings:#?}"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
