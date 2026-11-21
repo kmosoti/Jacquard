@@ -1,8 +1,8 @@
 # ADR-0003: The Installation Is the First Product, Imported From a Clean Snapshot
 
-- **Status.** Accepted
+- **Status.** Superseded for public release by [ADR-0009](ADR-0009-public-cockpit-product.md)
 - **Date.** 2026-09-28
-- **Provenance.** The Installation repository (the kennedy.mosoti.dev rebuild, main at 4a7f0a1 on 2026-09-28) and the owner's decision to reframe the work as a UI factory.
+- **Provenance.** The Installation repository (the personal portfolio rebuild, main at 4a7f0a1 on 2026-09-28) and the owner's decision to reframe the work as a UI factory.
 
 ## Context
 

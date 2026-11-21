@@ -36,6 +36,8 @@
     "jacquard": "bin",
     "jacquard-xtask": "bin",
     "jacquard-renderer-chrome": "adapters",
-    "jacquard-judge-claude": "adapters"
+    "jacquard-judge-claude": "adapters",
+    "jacquard-renderer-playwright": "adapters",
+    "jacquard-loom-claude": "adapters"
   }
 }
