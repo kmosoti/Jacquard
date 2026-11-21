@@ -1,0 +1,19 @@
+[package]
+name = "iso-diagram"
+description = "Zero-dependency typed Rust 2.5D isometric infrastructure diagramming eDSL, orthogonal router, orbit camera, and SVG renderer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+serde = ["dep:serde"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"], optional = true }
+
+[lints]
+workspace = true
