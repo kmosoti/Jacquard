@@ -1,0 +1,175 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build-and-attest:
+    runs-on: ubuntu-latest
+    env:
+      JACQUARD_CHROME: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Toolchain from rust-toolchain.toml
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: Install release tooling (binaryen, zstd, jq, wasm-bindgen-cli 0.2.130)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binaryen zstd jq
+          if ! command -v wasm-bindgen >/dev/null 2>&1 || [ "$(wasm-bindgen --version | awk '{print $2}')" != "0.2.130" ]; then
+            cargo install --locked wasm-bindgen-cli --version 0.2.130
+          fi
+
+      - name: Resolve release metadata and trust-boundary base
+        run: |
+          base="$(git rev-list --max-parents=0 HEAD | tail -n 1)"
+          epoch="$(git log -1 --format=%ct)"
+          version="${GITHUB_REF_NAME#refs/tags/}"
+          mkdir -p dist
+          {
+            echo "TRUST_BASE=$base"
+            echo "SOURCE_DATE_EPOCH=$epoch"
+            echo "RELEASE_VERSION=$version"
+            echo "RUSTC_VERSION=$(rustc -V)"
+          } >> "$GITHUB_ENV"
+
+      - name: Run fast verification checks with receipts
+        run: cargo xtask checks --profile fast --base "$TRUST_BASE" --out dist/fast-receipts.ndjson
+
+      - name: Package attested jacquard CLI archive (tar.zst)
+        run: |
+          cargo build --release --locked --package jacquard
+          root_target="${CARGO_TARGET_DIR:-target}"
+          stage="$(mktemp -d)"
+          trap 'rm -rf "$stage"' EXIT
+          mkdir -p "$stage/bin"
+          cp "$root_target/release/jacquard" "$stage/bin/jacquard"
+          chmod 0755 "$stage/bin/jacquard"
+          cp LICENSE NOTICE "$stage/"
+          out="dist/jacquard-${RELEASE_VERSION}-x86_64-unknown-linux-gnu.tar.zst"
+          tar --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner \
+            -C "$stage" -cf - . | zstd -19 -T0 -o "$out"
+          echo "JACQUARD_ARCHIVE=$(basename "$out")" >> "$GITHUB_ENV"
+
+      - name: Package reproducible cockpit-dist WASM/SSR bundle (tar.zst)
+        run: |
+          cockpit_target="${CARGO_TARGET_DIR:-products/cockpit/target}"
+          cargo build --manifest-path products/cockpit/Cargo.toml --release --locked -p iso-diagram --bin iso-render
+          cargo build --manifest-path products/cockpit/Cargo.toml --release --locked -p cockpit-leptos --lib --features ssr
+          cargo build --manifest-path products/cockpit/Cargo.toml --release --locked -p cockpit-leptos --lib --no-default-features --features hydrate --target wasm32-unknown-unknown
+
+          stage="$(mktemp -d)"
+          trap 'rm -rf "$stage"' EXIT
+          mkdir -p "$stage/pkg" "$stage/style" "$stage/svg" "$stage/contracts"
+          cp products/cockpit/CONTRACT.md products/cockpit/budgets.toml "$stage/contracts/"
+          cp products/cockpit/crates/cockpit-leptos/style/*.css "$stage/style/"
+
+          for scene in campus-ha payment-gateway asset-gallery; do
+            for theme in paper obsidian; do
+              "$cockpit_target/release/iso-render" --scene "$scene" --theme "$theme" "$stage/svg/${scene}-${theme}.svg"
+            done
+          done
+
+          raw_wasm="$cockpit_target/wasm32-unknown-unknown/release/cockpit_leptos.wasm"
+          wasm-bindgen "$raw_wasm" --target web --no-typescript --out-dir "$stage/pkg"
+          mv "$stage/pkg/cockpit_leptos_bg.wasm" "$stage/pkg/cockpit_leptos_bg.unopt.wasm"
+          wasm-opt -Oz --all-features "$stage/pkg/cockpit_leptos_bg.unopt.wasm" -o "$stage/pkg/cockpit_leptos_bg.wasm"
+          rm -f "$stage/pkg/cockpit_leptos_bg.unopt.wasm"
+
+          wasm_bytes="$(wc -c < "$stage/pkg/cockpit_leptos_bg.wasm" | tr -d '[:space:]')"
+          wasm_max=256000
+          if [ "$wasm_bytes" -gt "$wasm_max" ]; then
+            echo "WASM byte budget exceeded: $wasm_bytes > $wasm_max" >&2
+            exit 1
+          fi
+          wasm_sha="$(sha256sum "$stage/pkg/cockpit_leptos_bg.wasm" | awk '{print $1}')"
+
+          out="dist/cockpit-dist-${RELEASE_VERSION}.tar.zst"
+          tar --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner \
+            -C "$stage" -cf - . | zstd -19 -T0 -o "$out"
+          {
+            echo "COCKPIT_ARCHIVE=$(basename "$out")"
+            echo "COCKPIT_WASM_BYTES=$wasm_bytes"
+            echo "COCKPIT_WASM_SHA256=$wasm_sha"
+          } >> "$GITHUB_ENV"
+
+      - name: Emit SHA256SUMS and RELEASE-EVIDENCE.json
+        run: |
+          (
+            cd dist
+            sha256sum "$JACQUARD_ARCHIVE" "$COCKPIT_ARCHIVE" fast-receipts.ndjson > SHA256SUMS
+          )
+          jacquard_sha="$(sha256sum "dist/$JACQUARD_ARCHIVE" | awk '{print $1}')"
+          cockpit_sha="$(sha256sum "dist/$COCKPIT_ARCHIVE" | awk '{print $1}')"
+          receipts_sha="$(sha256sum dist/fast-receipts.ndjson | awk '{print $1}')"
+          jq -n \
+            --arg version "$RELEASE_VERSION" \
+            --arg git_sha "${{ github.sha }}" \
+            --argjson source_date_epoch "$SOURCE_DATE_EPOCH" \
+            --arg rustc "$RUSTC_VERSION" \
+            --argjson wasm_bytes "$COCKPIT_WASM_BYTES" \
+            --argjson wasm_max_bytes 256000 \
+            --arg cockpit_wasm_sha256 "$COCKPIT_WASM_SHA256" \
+            --arg jacquard_archive "$JACQUARD_ARCHIVE" \
+            --arg jacquard_sha256 "$jacquard_sha" \
+            --arg cockpit_archive "$COCKPIT_ARCHIVE" \
+            --arg cockpit_sha256 "$cockpit_sha" \
+            --arg receipts_sha256 "$receipts_sha" \
+            '{
+              schema_version: 1,
+              release_version: $version,
+              git_sha: $git_sha,
+              source_date_epoch: $source_date_epoch,
+              rustc: $rustc,
+              cockpit_wasm: {
+                bytes: $wasm_bytes,
+                max_bytes: $wasm_max_bytes,
+                within_budget: ($wasm_bytes <= $wasm_max_bytes),
+                sha256: $cockpit_wasm_sha256
+              },
+              artifacts: {
+                jacquard_cli: { file: $jacquard_archive, sha256: $jacquard_sha256 },
+                cockpit_dist: { file: $cockpit_archive, sha256: $cockpit_sha256 },
+                fast_receipts_ndjson: { file: "fast-receipts.ndjson", sha256: $receipts_sha256 }
+              }
+            }' > dist/RELEASE-EVIDENCE.json
+          sha256sum dist/RELEASE-EVIDENCE.json | sed 's|dist/||' >> dist/SHA256SUMS
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: |
+            dist/${{ env.JACQUARD_ARCHIVE }}
+            dist/${{ env.COCKPIT_ARCHIVE }}
+            dist/SHA256SUMS
+            dist/RELEASE-EVIDENCE.json
+            dist/fast-receipts.ndjson
+
+      - name: Upload release bundle artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: jacquard-release-${{ env.RELEASE_VERSION }}
+          path: dist/
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          files: |
+            dist/${{ env.JACQUARD_ARCHIVE }}
+            dist/${{ env.COCKPIT_ARCHIVE }}
+            dist/SHA256SUMS
+            dist/RELEASE-EVIDENCE.json
+            dist/fast-receipts.ndjson
