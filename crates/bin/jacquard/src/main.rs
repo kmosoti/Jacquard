@@ -2,6 +2,8 @@
 //!
 //! Exit status: 0 success, 1 a check or admission said no, 2 could not run.
 
+mod product;
+
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -26,7 +28,8 @@ const USAGE: &str = "usage: jacquard <command>
   compare DIR-A DIR-B [--viewports ...] [--ledger DIR]
   rank FILE [--seed N]
   admission verify [--set DIR]
-  admission run [--set DIR] [--limit N]";
+  admission run [--set DIR] [--limit N]
+  product render|probe|judge|perf|weave|check ...";
 
 fn root() -> PathBuf {
     let here = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
@@ -403,6 +406,7 @@ fn main() -> ExitCode {
         "compare" => compare_cmd(&mut args),
         "rank" => rank_cmd(&mut args),
         "admission" => admission_cmd(&mut args),
+        "product" => product::run(&mut args),
         _ => Err(USAGE.to_string()),
     };
     match result {

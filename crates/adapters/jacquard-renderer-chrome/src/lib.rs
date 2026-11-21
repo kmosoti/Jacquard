@@ -28,7 +28,7 @@ pub const PROBE: &str = include_str!("probe.js");
 /// The id of the element the probe writes its report into.
 pub const PROBE_ID: &str = "jacquard-probe";
 
-const BROWSER_LOCK: &str = "/tmp/installation-browser.lock";
+const BROWSER_LOCK: &str = "/tmp/jacquard-browser.lock";
 
 /// A name no other render or launch in this process uses, so that
 /// concurrent calls never share a directory or an output file.

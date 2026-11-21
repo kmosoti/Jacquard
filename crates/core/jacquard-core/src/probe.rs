@@ -108,7 +108,10 @@ pub struct Report {
 pub struct Finding {
     /// The rule.
     pub rule: Rule,
-    /// What and where.
+    /// What the finding is about: an element, a pair of elements, or the
+    /// document. Stable across renders of the same layout.
+    pub subject: String,
+    /// What and where, with the measured numbers.
     pub detail: String,
 }
 
@@ -128,18 +131,21 @@ pub fn evaluate(report: &Report) -> Vec<Finding> {
     if let Some(viewport) = report.viewport.filter(|v| report.document_width > v.width) {
         findings.push(Finding {
             rule: Rule::HorizontalOverflow,
+            subject: "document".into(),
             detail: format!("document is {}px wide at {viewport}", report.document_width),
         });
     }
     for element in &report.clipped {
         findings.push(Finding {
             rule: Rule::ClippedText,
+            subject: element.clone(),
             detail: format!("{element} hides part of its text"),
         });
     }
     for (a, b) in &report.overlaps {
         findings.push(Finding {
             rule: Rule::OverlappingText,
+            subject: format!("{a} / {b}"),
             detail: format!("{a} overlaps {b}"),
         });
     }
@@ -148,6 +154,7 @@ pub fn evaluate(report: &Report) -> Vec<Finding> {
         if sample.ratio < minimum {
             findings.push(Finding {
                 rule: Rule::LowContrast,
+                subject: sample.element.clone(),
                 detail: format!(
                     "{} has contrast {:.2}:1, below {minimum}:1",
                     sample.element, sample.ratio
@@ -159,6 +166,7 @@ pub fn evaluate(report: &Report) -> Vec<Finding> {
         if !target.inline && (target.width < MINIMUM_TARGET || target.height < MINIMUM_TARGET) {
             findings.push(Finding {
                 rule: Rule::SmallTarget,
+                subject: target.element.clone(),
                 detail: format!(
                     "{} is {:.0}x{:.0}px, below {MINIMUM_TARGET}x{MINIMUM_TARGET}",
                     target.element, target.width, target.height

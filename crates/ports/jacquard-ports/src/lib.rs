@@ -58,15 +58,34 @@ impl fmt::Display for Failure {
 
 impl std::error::Error for Failure {}
 
-/// Weaves a Swatch from a Draft. Proposes; never verifies; never sees a
-/// Judgment.
+/// What a Loom wove: the edited copy's changes, as a patch.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Weave {
+    /// Paths the Loom changed, relative to the copy's root.
+    pub changed: Vec<String>,
+    /// A unified diff from the base to the edited copy.
+    pub patch: String,
+    /// The model that actually wove, as the transport reported it.
+    pub model: String,
+    /// The Loom's own account of what it changed; data, not evidence.
+    pub summary: String,
+}
+
+/// Weaves a change to a Product from a Draft (ADR-0008). Proposes; never
+/// verifies; never sees a Judgment.
 pub trait Loom {
-    /// Weaves one Swatch from the Draft's text and a seed.
+    /// Copies `base` to `out`, lets the generator edit the copy under the
+    /// Draft, and returns what changed.
     ///
     /// # Errors
     ///
-    /// Returns a [`Failure`] when no Swatch was woven.
-    fn weave(&self, draft: &str, seed: u64) -> Result<SwatchSource, Failure>;
+    /// Returns a [`Failure`] when nothing was woven.
+    fn weave(
+        &self,
+        draft: &str,
+        base: &std::path::Path,
+        out: &std::path::Path,
+    ) -> Result<Weave, Failure>;
 }
 
 /// Renders a Swatch into Renders at viewports.
@@ -79,6 +98,16 @@ pub trait Renderer {
     /// that is the render gate's rejection.
     fn render(&self, swatch: &SwatchSource, viewports: &[Viewport])
     -> Result<Vec<Render>, Failure>;
+}
+
+/// Renders a live page, served by a Product, at viewports (ADR-0008).
+pub trait PageRenderer {
+    /// Renders the page at `url` at each viewport, in order.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`Failure`] when the page did not load or settle.
+    fn render_url(&self, url: &str, viewports: &[Viewport]) -> Result<Vec<Render>, Failure>;
 }
 
 /// Runs one registered Check.
