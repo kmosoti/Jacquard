@@ -1,0 +1,19 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/iso-diagram",
+    "crates/telemetry-scene",
+    "crates/cockpit-wiki",
+]
+
+[workspace.package]
+version = "0.1.0-alpha.1"
+edition = "2024"
+rust-version = "1.100"
+license = "Apache-2.0"
+repository = "https://github.com/kmosoti/Jacquard"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"

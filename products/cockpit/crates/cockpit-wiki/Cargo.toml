@@ -1,0 +1,19 @@
+[package]
+name = "cockpit-wiki"
+description = "Pure-Rust compile-time and runtime Markdown + Mermaid + syntax-safe Wiki and Blog engine with RSS/Atom feeds"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+iso-diagram = { path = "../iso-diagram" }
+pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+toml = "0.9"
+
+[lints]
+workspace = true
