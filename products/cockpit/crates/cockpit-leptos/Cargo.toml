@@ -1,0 +1,61 @@
+[package]
+name = "cockpit-leptos"
+description = "Hallmark x Leptos 0.8.23 (tachys) Islands/SSR+CSR telemetry cockpit powered by iso-diagram, telemetry-scene, and cockpit-wiki"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["ssr"]
+ssr = [
+    "leptos/ssr",
+    "leptos/islands",
+    "wiki",
+    "dep:hydration_context",
+    "dep:iso-diagram",
+    "dep:serde",
+    "dep:serde_json",
+    "dep:telemetry-scene",
+    "dep:wasm-bindgen-futures",
+]
+hydrate = ["leptos/hydrate", "leptos/islands"]
+islands = ["leptos/islands"]
+wiki = ["dep:cockpit-wiki"]
+
+[dependencies]
+cockpit-wiki = { path = "../cockpit-wiki", optional = true }
+hydration_context = { version = "0.3", optional = true }
+iso-diagram = { path = "../iso-diagram", features = ["serde"], optional = true }
+js-sys = "0.3"
+leptos = { version = "0.8.23", default-features = false }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+telemetry-scene = { path = "../telemetry-scene", optional = true }
+wasm-bindgen = "=0.2.130"
+wasm-bindgen-futures = { version = "0.4", optional = true }
+web-sys = { version = "0.3", features = [
+    "Document",
+    "DomRect",
+    "Element",
+    "Event",
+    "EventSource",
+    "EventTarget",
+    "HtmlDialogElement",
+    "HtmlElement",
+    "HtmlInputElement",
+    "KeyboardEvent",
+    "MouseEvent",
+    "PointerEvent",
+    "VisibilityState",
+    "WheelEvent",
+    "Window",
+] }
+
+[lints]
+workspace = true
