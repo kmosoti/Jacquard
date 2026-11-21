@@ -166,8 +166,7 @@ pub fn parse(output: &str) -> Result<Answer, Failure> {
     }
     let models: Vec<String> = result["modelUsage"]
         .as_object()
-        .map(|m| m.keys().cloned().collect())
-        .unwrap_or_default();
+        .map_or_else(Vec::new, |m| m.keys().cloned().collect());
     let text = result["result"].as_str().unwrap_or_default();
     let object = text
         .find('{')

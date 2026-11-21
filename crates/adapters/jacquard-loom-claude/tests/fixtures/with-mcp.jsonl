@@ -1,0 +1,2 @@
+{"type": "system", "subtype": "init", "tools": ["Read", "Glob", "Grep", "Edit", "Write"], "mcp_servers": [{"name": "x"}], "model": "claude-sonnet-5-5"}
+{"type": "result", "subtype": "success", "is_error": false, "result": "Changed style/app.css to widen the status column.", "modelUsage": {"claude-sonnet-5-5": {}}}

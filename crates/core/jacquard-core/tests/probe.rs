@@ -35,7 +35,7 @@ fn overflow_starts_one_pixel_past_the_viewport() {
         document_width: 391,
         ..Report::default()
     };
-    assert!(rules(&at).is_empty());
+    assert_eq!(rules(&at), []);
     assert_eq!(rules(&past), [Rule::HorizontalOverflow]);
     assert_eq!(outcome(&evaluate(&past)), Outcome::Failed);
 }
@@ -55,11 +55,11 @@ fn contrast(ratio: f64, large: bool) -> Report {
 
 #[test]
 fn contrast_thresholds_are_wcag_1_4_3() {
-    assert!(rules(&contrast(4.5, false)).is_empty());
+    assert_eq!(rules(&contrast(4.5, false)), []);
     assert_eq!(rules(&contrast(4.49, false)), [Rule::LowContrast]);
-    assert!(rules(&contrast(3.0, true)).is_empty());
+    assert_eq!(rules(&contrast(3.0, true)), []);
     assert_eq!(rules(&contrast(2.99, true)), [Rule::LowContrast]);
-    assert!(rules(&contrast(21.0, false)).is_empty());
+    assert_eq!(rules(&contrast(21.0, false)), []);
 }
 
 fn target(width: f64, height: f64, inline: bool) -> Report {
@@ -78,11 +78,12 @@ fn target(width: f64, height: f64, inline: bool) -> Report {
 
 #[test]
 fn target_size_is_wcag_2_5_8() {
-    assert!(rules(&target(24.0, 24.0, false)).is_empty());
+    assert_eq!(rules(&target(24.0, 24.0, false)), []);
     assert_eq!(rules(&target(23.9, 44.0, false)), [Rule::SmallTarget]);
     assert_eq!(rules(&target(44.0, 23.9, false)), [Rule::SmallTarget]);
-    assert!(
-        rules(&target(12.0, 12.0, true)).is_empty(),
+    assert_eq!(
+        rules(&target(12.0, 12.0, true)),
+        [],
         "inline targets are exempt"
     );
 }

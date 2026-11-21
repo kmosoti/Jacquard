@@ -158,3 +158,65 @@ fn a_page_that_received_another_viewport_is_refused() {
         "no report is a failure"
     );
 }
+
+#[test]
+fn text_no_sighted_visitor_sees_is_not_measured() {
+    let r = render(
+        "<style>.vh{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}\
+         .skip{position:absolute;left:8px;top:-72px}</style>\
+         <p class='vh'>Screen-reader help that is much longer than one pixel</p>\
+         <a class='skip' href='#a'>Skip to content</a><a class='skip' href='#b'>Skip to the list</a>\
+         <p style='color:transparent'>Invisible</p><p style='min-height:44px'>Seen</p>",
+        phone(),
+    );
+    assert_eq!(rules(&r), [], "{:#?}", evaluate(&r.probe));
+}
+
+#[test]
+fn a_visible_clipped_or_faint_element_is_still_measured() {
+    let r = render(
+        "<p style='white-space:nowrap;overflow:hidden;width:40px'>A long line of visible text</p><p style='color:#ccc'>Faint</p>",
+        phone(),
+    );
+    assert_eq!(rules(&r), [Rule::ClippedText, Rule::LowContrast]);
+}
+
+#[test]
+fn oklch_low_contrast_text_is_caught_by_canvas_srgb_readback() {
+    let r = render(
+        "<div style='background:oklch(0.96 0.01 90);padding:16px'>\
+         <p style='color:oklch(0.75 0.03 240)'>Faint OKLCH</p>\
+         <p style='color:oklch(0.22 0.02 250)'>Crisp OKLCH</p>\
+         </div>",
+        phone(),
+    );
+    let findings = evaluate(&r.probe);
+    assert_eq!(rules(&r), [Rule::LowContrast], "{findings:#?}");
+    assert!(
+        findings.iter().any(|f| f.subject.contains("Faint OKLCH")),
+        "low-contrast oklch text must be reported: {findings:#?}"
+    );
+    assert!(
+        !findings.iter().any(|f| f.subject.contains("Crisp OKLCH")),
+        "high-contrast oklch text must pass: {findings:#?}"
+    );
+}
+
+#[test]
+fn spatial_grid_overlap_covers_nodes_beyond_400() {
+    use std::fmt::Write as _;
+    let mut body = String::from("<main style='padding:8px'>");
+    for idx in 0..410 {
+        let _ = write!(body, "<p style='margin:2px 0'>Row {idx}</p>");
+    }
+    body.push_str(
+        "<p style='margin:0 0 -1.3em'>Tail overlap A</p><p style='margin:0'>Tail overlap B</p></main>",
+    );
+    let r = render(&body, phone());
+    assert_eq!(
+        rules(&r),
+        [Rule::OverlappingText],
+        "{:#?}",
+        evaluate(&r.probe)
+    );
+}
