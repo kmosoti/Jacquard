@@ -1,6 +1,6 @@
 # Contributing to Jacquard
 
-Jacquard is at the skeleton stage. The most valuable contributions are careful ones: a sharper contract, a cleaner port, a check with a negative control.
+Jacquard is licensed under Apache-2.0 and built on Rust `1.100.0`. The most valuable contributions are careful ones: a sharper contract, a cleaner port, a pure-Rust UI primitive, or a check with a negative control.
 
 ## Before You Start
 
@@ -14,7 +14,7 @@ For anything bigger than a small fix, open an issue first.
 
 ## Toolchain and Checks
 
-Rust is pinned in `rust-toolchain.toml`. Before a pull request:
+Rust `1.100.0` (with `wasm32-unknown-unknown`) is pinned in `rust-toolchain.toml`. Before opening a pull request:
 
 ```sh
 cargo fmt    --all --check
@@ -23,13 +23,13 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test   --workspace --locked
 ```
 
-Then the gates, which CI runs on every push through the same command:
+Then the gates, which CI runs on every push and pull request through the same command:
 
 ```sh
 cargo xtask checks --profile fast --base origin/main
 ```
 
-That runs the four commands above plus `check-layers`, `check-core-purity`, `check-trust-boundary` and `receipts validate`, and writes a receipt per check under `target/verification/receipts/`. Each gate prints a stable code per failure and is tested against fixtures under `tests/fixtures/`, one case or more per code ([verification/README.md](verification/README.md)).
+That runs the four commands above plus `check-layers`, `check-core-purity`, `check-trust-boundary`, `mutants semantic`, and `receipts validate`, and writes a receipt per check under `target/verification/receipts/`. Each gate prints a stable code per failure and is tested against fixtures under `tests/fixtures/`, one case or more per code ([verification/README.md](verification/README.md)).
 
 ## Where Code Goes
 
@@ -43,11 +43,11 @@ flowchart LR
     ports --> core
 ```
 
-Dependencies point inward. `core/` depends on nothing. `app/` never depends on `adapters/`. Only `bin/` wires adapters to ports. A new technology is a new adapter crate; it never adds a dependency to the core.
+Dependencies point inward. `core/` depends on nothing. `app/` never depends on `adapters/`. Only `bin/` wires adapters to ports. A new technology is a new adapter crate; it never adds a dependency to the core. Reference Products live under `products/<name>/` in their own isolated Cargo workspaces.
 
 ## How Work Is Judged
 
-Most code here is written by language models and reviewed by people. A model's verdict is never a gate ([ADR-0001](docs/decisions/ADR-0001-accept-work-on-executable-evidence.md)). What gates is a registered Check with a Receipt. The specification and the verifier are protected; a change to them is declared in its own commit with a `Trust-Boundary:` line ([AGENTS.md](AGENTS.md) rule 10). A test written alongside the code it tests is a regression test; a test whose oracle comes from outside the code is evidence for a property.
+Most code here is reviewed against executable Checks. A model's verdict is never a gate ([ADR-0001](docs/decisions/ADR-0001-accept-work-on-executable-evidence.md)). What gates is a registered Check with a Receipt. The specification and the verifier are protected; a change to them is declared in its own commit with a `Trust-Boundary:` line ([AGENTS.md](AGENTS.md) rule 10). A test written alongside the code it tests is a regression test; a test whose oracle comes from outside the code is evidence for a property.
 
 ## Documentation
 
@@ -55,11 +55,11 @@ Direct, compact, skeptical prose built on mechanisms. American spelling, Title C
 
 ## Commits, Branches, Pull Requests
 
-- One change per pull request. Oracle changes in their own commits, declared.
+- Single-branch `main` workflow with stacked Jujutsu (`jj`) pull requests (`stack/<version>/<nn>-<name>`). Collaborators (including `@kennmosoti-maker`) open PRs targeting `main` with `@kmosoti` CODEOWNERS review.
+- One change per commit. Oracle changes (`Trust-Boundary: specification` or `Trust-Boundary: verifier`) stay in their own commits, separated from implementation commits.
 - Imperative subject, the *why* in the body.
-- `milestone/<nn>-<name>` branches, named from `docs/CURRENT.md`.
-- CI is green before review. Merge with merge commits.
+- CI is green before review. Preserve commit boundaries (`--no-ff` merge) so `check-trust-boundary` passes on every commit.
 
 ## License
 
-Not yet chosen; see the open decisions in [docs/CURRENT.md](docs/CURRENT.md).
+Licensed under the [Apache License, Version 2.0](LICENSE) (see [NOTICE](NOTICE)).

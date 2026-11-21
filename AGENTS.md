@@ -4,7 +4,7 @@ Operational contract for coding agents in Jacquard. Humans follow the same rules
 
 ## Project
 
-Jacquard is a UI factory. A Draft is compiled design intent. A Loom weaves Swatches from it. A cascade of Checks, a Judge and the owner's Votes decide which Swatch is accepted, and only Checks gate. The repository is at the **skeleton stage**: crates carry module docs and the types that pin the evidence rule. Do not add implementation unless the task names a milestone from [docs/CURRENT.md](docs/CURRENT.md) and the crates it covers.
+Jacquard is a UI factory and reference WebAssembly/SSR engineering cockpit (`products/cockpit`). A Draft is compiled design intent. A Loom weaves Swatches from it. A cascade of Checks, a Judge and the owner's Votes decide which Swatch is accepted, and only Checks gate.
 
 ## Source of Truth
 
@@ -26,7 +26,7 @@ Every agent in the design workflow (weaving, critique, judging, visual review, m
 
 ## Commands
 
-The toolchain is pinned in `rust-toolchain.toml`.
+The toolchain is pinned to Rust `1.100.0` in `rust-toolchain.toml` (with `wasm32-unknown-unknown`).
 
 ```sh
 cargo fmt    --all --check
@@ -45,6 +45,12 @@ cargo xtask receipts validate                        # every committed receipt n
 cargo xtask checks --profile fast --base origin/main # all of the above and the four cargo checks, with receipts under target/
 ```
 
+For `products/cockpit`, also verify:
+
+```sh
+(cd products/cockpit && cargo fmt --all --check && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo test --workspace --locked && cargo check -p cockpit-leptos --no-default-features --features csr --target wasm32-unknown-unknown --locked)
+```
+
 A failure prints a stable code under the gate's prefix: `FORBIDDEN [forbidden-edge]`, `IMPURE [core-uses-std]`, `UNDECLARED [undeclared-oracle-change]`, `REJECTED [receipt-passed-without-evidence]`. A gate that cannot run prints `ERROR [gate-could-not-run]` and exits 2. The full list is in `verification/README.md`; every code has a fixture under `tests/fixtures/` that must produce it. Record a committed receipt with `cargo xtask receipts record <check-id> --out verification/receipts/<file>.ndjson -- <command>`; never write one by hand.
 
 ## Layout
@@ -56,6 +62,7 @@ A failure prints a stable code under the gate's prefix: `FORBIDDEN [forbidden-ed
 | `crates/app/` | Use cases | `core/`, `ports/` |
 | `crates/adapters/` | Driven adapters | `core/` and the one port each implements |
 | `crates/bin/` | CLI, composition root, `jacquard-xtask` | anything |
+| `products/cockpit/` | Reference Product workspace | `iso-diagram`, `telemetry-scene`, `cockpit-wiki`, `cockpit-leptos` |
 
 ## Rules
 
@@ -67,7 +74,7 @@ A failure prints a stable code under the gate's prefix: `FORBIDDEN [forbidden-ed
 6. **Comparisons are pairwise and order-swapped.** No absolute scores are claimed.
 7. **Determinism.** Swatch identity is a content hash. Nothing that feeds a Check depends on wall-clock time, randomness or iteration order.
 8. **No `unsafe`.** Workspace lints forbid it.
-9. **Tooling is Rust**, in `crates/bin/jacquard-xtask`, run as `cargo xtask`.
+9. **Tooling is Rust**, in `crates/bin/jacquard-xtask`, run as `cargo xtask`. Never use Python anywhere in `Jacquard`.
 10. **Never weaken a specification to pass a check.** The product contract, `docs/decisions/`, `docs/architecture/layers.json`, `crates/core/PURITY.toml`, `tests/`, `verification/`, the xtask crate, `.github/workflows/`, `.cargo/`, the root `Cargo.toml` and `rust-toolchain.toml` are protected. A commit that touches them carries `Trust-Boundary: specification` or `Trust-Boundary: verifier` and touches no implementation crate; an ignored test, skipped mutant or allowed lint carries `Trust-Boundary: escape-hatch`. `cargo xtask check-trust-boundary` enforces it on every push, with the protected list in `verification/trust-boundary.toml`.
 11. **Private material never enters a Product or the history.** Nothing that names a client, a figure under NDA, compensation or a private assessment.
 12. **Record what ran.** Never report a command you did not run as passing; a check that did not run is `NotRun`, a timeout `Inconclusive`. A test you wrote for code you wrote is a regression test unless its oracle comes from outside the code.
@@ -75,13 +82,13 @@ A failure prints a stable code under the gate's prefix: `FORBIDDEN [forbidden-ed
 
 ## Process
 
-- Branches are `milestone/<nn>-<name>`; never `claude/*`, `agent/*` or `pr-*`.
-- Merge with merge commits; a squash loses the declarations.
-- Plain Git. Never rewrite published history or force-push.
+- Single-branch `main` with stacked Jujutsu (`jj`) bookmarks (`stack/<version>/<nn>-<name>` or `milestone/<nn>-<name>`). Collaborator PRs (such as `@kennmosoti-maker`) target `main` and require owner (`@kmosoti`) CODEOWNERS approval.
+- Merge with merge commits (`--no-ff`) or rebase stacked bookmarks cleanly; never squash commits with `Trust-Boundary:` declarations, as squashing merges oracle and implementation paths.
+- Never rewrite published `main` history or force-push `main`.
 - One focused change per commit, imperative subject, the *why* in the body.
-- Update `docs/CURRENT.md`, the glossary and the affected ADR in the same change.
+- Update `docs/CURRENT.md`, the glossary and the affected ADR in the same change (respecting `Trust-Boundary:` commit separation).
 - Diagrams are Mermaid, unlabeled arrows, rendering on GitHub.
 
 ## Completion Report
 
-End a task with: branch, base and final commit; documents and ADRs changed; commands run with their results as printed; test counts; negative controls exercised; receipts written; unchecked behavior; open decisions for the owner. No narrative of reasoning.
+End a task with: branch/bookmark, base and final commit; documents and ADRs changed; commands run with their results as printed; test counts; negative controls exercised; receipts written; unchecked behavior; open decisions for the owner. No narrative of reasoning.
