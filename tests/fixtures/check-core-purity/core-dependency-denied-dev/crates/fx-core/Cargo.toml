@@ -6,3 +6,6 @@ publish = false
 
 [dev-dependencies]
 fx-helper = { path = "../fx-helper" }
+
+[lints]
+workspace = true

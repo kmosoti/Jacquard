@@ -17,7 +17,7 @@ const USAGE: &str = "usage: cargo xtask <command>
   receipts validate                 [--dir DIR]
   receipts record CHECK-ID --out FILE -- COMMAND...
   checks --profile NAME [--base REF] [--out FILE]
-  mutants semantic                  [--corpus FILE]";
+  mutants semantic                  [--corpus FILE] [--base REF]";
 
 fn option(args: &mut Vec<String>, name: &str) -> Option<String> {
     let at = args.iter().position(|a| a == name)?;
@@ -121,10 +121,14 @@ fn main() -> ExitCode {
                 || root.join("tests/semantic-mutants/corpus.toml"),
                 PathBuf::from,
             );
-            gate(
-                "SURVIVED",
-                mutants::run(&root, &corpus, |id, result| eprintln!("{id}: {result}")),
-            )
+            let base = option(&mut args, "--base");
+            let res = base
+                .as_deref()
+                .map_or(Ok(()), |b| mutants::verify_against_base(&root, b))
+                .and_then(|()| {
+                    mutants::run(&root, &corpus, |id, result| eprintln!("{id}: {result}"))
+                });
+            gate("SURVIVED", res)
         }
         "checks" => checks(&root, &mut args).unwrap_or_else(|message| {
             println!("ERROR {message}");

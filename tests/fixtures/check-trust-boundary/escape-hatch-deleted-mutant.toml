@@ -1,0 +1,11 @@
+expected = ["escape-hatch-added"]
+
+[commit]
+id = "escape-hatch-deleted-mutant"
+message = """
+Remove semantic mutant without declaring escape-hatch
+
+Trust-Boundary: verifier
+"""
+paths = ["tests/semantic-mutants/corpus.toml"]
+mutants_escape = ["deleted mutant `admission-tie-counts-correct`"]

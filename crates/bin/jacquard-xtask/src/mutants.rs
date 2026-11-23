@@ -13,6 +13,9 @@ use serde::Deserialize;
 use crate::finding::Finding;
 use crate::util;
 
+/// Production semantic-mutant corpus path relative to repository root.
+pub const PRODUCTION_CORPUS: &str = "tests/semantic-mutants/corpus.toml";
+
 /// Every failure code this gate can print.
 pub const CODES: &[&str] = &[
     "mutant-survived",
@@ -34,7 +37,7 @@ pub struct Corpus {
 }
 
 /// One wrong behavior and its named defender.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Mutant {
     /// A stable id.
@@ -56,14 +59,110 @@ pub struct Mutant {
 }
 
 impl Corpus {
-    /// Reads a corpus.
+    /// Reads a corpus, rejecting empty corpora or duplicate mutant IDs.
     ///
     /// # Errors
     ///
-    /// Returns a message when the file cannot be read or parsed.
+    /// Returns a message when the file cannot be read, parsed, is empty, or
+    /// contains duplicate IDs.
     pub fn load(path: &Path) -> Result<Self, String> {
-        toml::from_str(&util::read(path)?).map_err(|e| format!("{}: {e}", path.display()))
+        Self::parse(&util::read(path)?, &path.display().to_string())
     }
+
+    /// Parses a corpus from TOML text, rejecting empty corpora or duplicate IDs.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message when the TOML is invalid, empty, or contains duplicate IDs.
+    pub fn parse(raw: &str, label: &str) -> Result<Self, String> {
+        let corpus: Self = toml::from_str(raw).map_err(|e| format!("{label}: {e}"))?;
+        if corpus.mutant.is_empty() {
+            return Err(format!("{label}: semantic-mutant corpus must not be empty"));
+        }
+        let mut seen = BTreeSet::new();
+        for m in &corpus.mutant {
+            if !seen.insert(&m.id) {
+                return Err(format!("{label}: duplicate mutant id {}", m.id));
+            }
+        }
+        Ok(corpus)
+    }
+}
+
+/// Compares `before` and `after` corpora, returning human-readable descriptions
+/// of any deleted or altered/weakened mutant entries.
+#[must_use]
+pub fn diff_corpora(before: &Corpus, after: &Corpus) -> Vec<String> {
+    let after_by_id: BTreeMap<&str, &Mutant> =
+        after.mutant.iter().map(|m| (m.id.as_str(), m)).collect();
+    let mut violations = Vec::new();
+    for m in &before.mutant {
+        match after_by_id.get(m.id.as_str()) {
+            None => violations.push(format!("deleted mutant `{}`", m.id)),
+            Some(cur)
+                if (
+                    cur.file.as_str(),
+                    cur.find.as_str(),
+                    cur.replace.as_str(),
+                    cur.package.as_str(),
+                    cur.test.as_str(),
+                    cur.name.as_str(),
+                ) != (
+                    m.file.as_str(),
+                    m.find.as_str(),
+                    m.replace.as_str(),
+                    m.package.as_str(),
+                    m.test.as_str(),
+                    m.name.as_str(),
+                ) =>
+            {
+                violations.push(format!("modified mutant `{}`", m.id));
+            }
+            Some(_) => {}
+        }
+    }
+    violations
+}
+
+/// Verifies against `--base` that no production mutant in [`PRODUCTION_CORPUS`]
+/// was deleted or weakened in uncommitted changes or commits lacking
+/// `Trust-Boundary: escape-hatch`.
+///
+/// # Errors
+///
+/// Returns an error if `base` cannot be resolved, the production corpus is empty
+/// or invalid, or any mutant ID was deleted/weakened without an escape hatch.
+pub fn verify_against_base(root: &Path, base: &str) -> Result<(), String> {
+    let spec = format!("{base}^{{commit}}");
+    util::run("git", &["rev-parse", "--verify", "--quiet", &spec], root)
+        .map_err(|_| format!("[unresolved-base] `{base}` does not name a commit"))?;
+
+    let head_corpus = Corpus::load(&root.join(PRODUCTION_CORPUS))?;
+
+    // Check uncommitted working tree changes against HEAD if PRODUCTION_CORPUS exists at HEAD.
+    let head_spec = format!("HEAD:{PRODUCTION_CORPUS}");
+    if let Ok(head_raw) = util::run("git", &["show", &head_spec], root) {
+        let committed = Corpus::parse(&head_raw, &head_spec)?;
+        let uncommitted = diff_corpora(&committed, &head_corpus);
+        if !uncommitted.is_empty() {
+            return Err(format!(
+                "{PRODUCTION_CORPUS} has uncommitted mutant deletions/modifications: {}",
+                uncommitted.join(", ")
+            ));
+        }
+    }
+
+    // Check every commit from merge-base(base, HEAD) to HEAD via trust-boundary declarations.
+    let findings = crate::trust::run(root, base)?;
+    let corpus_findings: Vec<String> = findings
+        .into_iter()
+        .filter(|f| f.detail.contains(PRODUCTION_CORPUS))
+        .map(|f| format!("[{}] {}", f.code, f.detail))
+        .collect();
+    if !corpus_findings.is_empty() {
+        return Err(corpus_findings.join("; "));
+    }
+    Ok(())
 }
 
 /// Applies a patch whose text must occur exactly once.
