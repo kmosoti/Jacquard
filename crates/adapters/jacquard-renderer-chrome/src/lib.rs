@@ -1,6 +1,8 @@
 //! The Chrome renderer (ADR-0004): Chrome's own `--headless --screenshot`
-//! and `--dump-dom`, one process each per viewport, with a layout probe
-//! injected before `</body>`. The probe measures; `jacquard-core` decides.
+//! and `--dump-dom`, one process each per viewport, served over an ephemeral
+//! `127.0.0.1:0` loopback listener with an isolated `--user-data-dir`, blocked
+//! non-loopback egress, and an outer-realm layout probe bound by a per-render
+//! 128-bit nonce. The probe measures; `jacquard-core` decides.
 //!
 //! The page is framed in an iframe of exactly the viewport's size, in both
 //! processes, because `--dump-dom` ignores `--window-size` (on Chrome 151 a
@@ -9,9 +11,15 @@
 //! and a render whose viewport differs from the request is refused.
 //!
 //! The binary is `JACQUARD_CHROME`, else the cached Chrome for Testing.
+//! Sandbox stays enabled by default unless `JACQUARD_ALLOW_NO_SANDBOX=1`.
 //! Every launch holds the machine-wide browser lock and is killed after
 //! [`LAUNCH_DEADLINE`].
 #![forbid(unsafe_code)]
+
+mod hmac;
+mod sandbox;
+mod server;
+mod wrapper;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -22,11 +30,16 @@ use jacquard_core::viewport::Viewport;
 use jacquard_ports::{Failure, Render, Renderer, SwatchSource};
 use serde::Deserialize;
 
-/// The probe script injected into every page.
-pub const PROBE: &str = include_str!("probe.js");
+pub use hmac::sign_probe_hex;
+use sandbox::{
+    TempDir, create_private_dir, ensure_no_secrets, generate_nonce, generate_secret_bytes,
+    materialize_contained,
+};
+use server::LoopbackServer;
+pub use wrapper::{PROBE_ID_PREFIX, probe_wrapper, shot_wrapper};
 
-/// The id of the element the probe writes its report into.
-pub const PROBE_ID: &str = "jacquard-probe";
+/// The probe script evaluated from the outer wrapper or Playwright.
+pub const PROBE: &str = include_str!("probe.js");
 
 const BROWSER_LOCK: &str = "/tmp/jacquard-browser.lock";
 
@@ -55,7 +68,7 @@ pub struct Chrome {
 
 impl Chrome {
     /// A renderer using `JACQUARD_CHROME` or the cached Chrome for Testing,
-    /// writing pages under `scratch`.
+    /// writing scratch artifacts under `scratch`.
     #[must_use]
     pub fn from_env(scratch: &Path) -> Self {
         let binary = std::env::var_os("JACQUARD_CHROME").map_or_else(
@@ -78,22 +91,51 @@ impl Chrome {
         &self.binary
     }
 
-    fn launch(&self, viewport: Viewport, extra: &[String], url: &str) -> Result<Vec<u8>, Failure> {
-        let mut args: Vec<String> = vec![
-            "--headless".into(),
-            "--no-sandbox".into(),
+    /// Builds the Chrome CLI arguments for `viewport` and `user_data_dir`,
+    /// keeping the sandbox enabled unless `allow_no_sandbox` is true and
+    /// blocking all non-loopback network egress.
+    #[must_use]
+    pub fn isolation_args(
+        &self,
+        viewport: Viewport,
+        user_data_dir: &Path,
+        allow_no_sandbox: bool,
+    ) -> Vec<String> {
+        let mut args = vec!["--headless".into()];
+        if allow_no_sandbox {
+            args.push("--no-sandbox".into());
+        }
+        args.extend([
             "--disable-gpu".into(),
             "--hide-scrollbars".into(),
             "--mute-audio".into(),
             "--no-first-run".into(),
+            "--no-default-browser-check".into(),
+            "--disable-background-networking".into(),
+            "--disable-extensions".into(),
+            "--proxy-server=direct://".into(),
+            "--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1 , EXCLUDE localhost".into(),
+            format!("--user-data-dir={}", user_data_dir.display()),
             "--force-device-scale-factor=1".into(),
             "--font-render-hinting=none".into(),
             "--run-all-compositor-stages-before-draw".into(),
             format!("--virtual-time-budget={}", self.budget_ms),
             format!("--window-size={},{}", viewport.width, viewport.height),
-        ];
+        ]);
+        args
+    }
+
+    fn launch(&self, viewport: Viewport, extra: &[String], url: &str) -> Result<Vec<u8>, Failure> {
+        create_private_dir(&self.scratch)?;
+        let launch = unique("chrome");
+        let user_data = TempDir(self.scratch.join(format!("{launch}-profile")));
+        create_private_dir(&user_data.0)?;
+        let allow_no_sandbox =
+            std::env::var_os("JACQUARD_ALLOW_NO_SANDBOX").is_some_and(|v| v == "1");
+        let mut args = self.isolation_args(viewport, &user_data.0, allow_no_sandbox);
         args.extend_from_slice(extra);
         args.push(url.to_string());
+
         // Held for the whole launch: several software-rendered browsers at
         // once have taken this machine down.
         let lock = std::fs::OpenOptions::new()
@@ -104,8 +146,7 @@ impl Chrome {
             .map_err(|e| Failure::Unavailable(format!("{BROWSER_LOCK}: {e}")))?;
         lock.lock()
             .map_err(|e| Failure::Unavailable(format!("{BROWSER_LOCK}: {e}")))?;
-        std::fs::create_dir_all(&self.scratch).map_err(|e| Failure::Failed(e.to_string()))?;
-        let launch = unique("chrome");
+
         let out_path = self.scratch.join(format!("{launch}.out"));
         let err_path = self.scratch.join(format!("{launch}.err"));
         let file = |p: &Path| std::fs::File::create(p).map_err(|e| Failure::Failed(e.to_string()));
@@ -125,6 +166,8 @@ impl Chrome {
                 Ok(None) => {
                     let _ = child.kill();
                     let _ = child.wait();
+                    let _ = std::fs::remove_file(&out_path);
+                    let _ = std::fs::remove_file(&err_path);
                     return Err(Failure::TimedOut(format!(
                         "chrome did not finish at {viewport} within {}s",
                         LAUNCH_DEADLINE.as_secs()
@@ -146,37 +189,6 @@ impl Chrome {
             )));
         }
         Ok(stdout)
-    }
-}
-
-const FRAME: &str = "__jacquard_frame";
-
-/// The page that frames the entry at exactly the viewport's size and
-/// receives the probe's report.
-#[must_use]
-pub fn wrapper(entry: &str, viewport: Viewport) -> String {
-    let (w, h) = (viewport.width, viewport.height);
-    let src = entry.replace('"', "%22");
-    let listen = format!(
-        "addEventListener(\"message\",function(e){{if(typeof e.data===\"string\"&&e.data.indexOf(\"jacquard-probe:\")===0){{\
-         var t=document.createElement(\"script\");t.type=\"application/json\";t.id=\"{PROBE_ID}\";t.textContent=e.data.slice(15);\
-         document.head.appendChild(t);}}}});"
-    );
-    format!(
-        "<!doctype html><html><head><meta charset=\"utf-8\"><script>{listen}</script>\
-         <style>html,body{{margin:0;padding:0;overflow:hidden;background:#fff}}\
-         iframe{{display:block;border:0;width:{w}px;height:{h}px}}</style></head>\
-         <body><iframe src=\"{src}\"></iframe></body></html>"
-    )
-}
-
-/// Injects the probe before the last `</body>`, or at the end.
-#[must_use]
-pub fn inject(html: &str) -> String {
-    let tag = format!("<script>{PROBE}</script>");
-    match html.rfind("</body>") {
-        Some(at) => format!("{}{tag}{}", &html[..at], &html[at..]),
-        None => format!("{html}{tag}"),
     }
 }
 
@@ -206,24 +218,36 @@ struct RawReport {
     targets: Vec<RawTarget>,
 }
 
-/// Reads the probe report out of a dumped DOM.
+fn is_valid_nonce(nonce: &str) -> bool {
+    nonce.len() == 32
+        && nonce
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// Reads and HMAC-verifies the unforgeable nonced probe report out of a dumped outer DOM.
 ///
 /// # Errors
 ///
-/// Returns a failure when the page never wrote a report, which means the
-/// page did not finish loading within the budget or broke the script.
-pub fn read_probe(dom: &str, viewport: Viewport) -> Result<Report, Failure> {
-    let open = format!("id=\"{PROBE_ID}\">");
-    let start = dom.find(&open).map(|at| at + open.len()).ok_or_else(|| {
-        Failure::Failed(format!(
-            "no probe report at {viewport}: the page did not settle"
-        ))
-    })?;
-    let end = dom[start..]
-        .find("</script>")
-        .map(|at| start + at)
-        .ok_or_else(|| Failure::Failed("unterminated probe report".into()))?;
-    let raw: RawReport = serde_json::from_str(&dom[start..end])
+/// Returns a failure when `nonce` is invalid, missing, duplicated, outside
+/// `<head>`, HMAC-SHA256 verification fails, or the report mismatches `viewport`.
+pub fn read_probe(
+    dom: &str,
+    viewport: Viewport,
+    nonce: &str,
+    mac_key: &[u8; 32],
+) -> Result<Report, Failure> {
+    if !is_valid_nonce(nonce) {
+        return Err(Failure::Failed("invalid probe nonce".into()));
+    }
+    let (sig_hex, json_slice) = hmac::extract_probe_tag(dom, nonce)?;
+    let mac_msg = format!("{PROBE_ID_PREFIX}{nonce}:{json_slice}");
+    if !hmac::verify_hmac_hex(mac_key, mac_msg.as_bytes(), &sig_hex) {
+        return Err(Failure::Failed(format!(
+            "probe HMAC verification failed at {viewport}"
+        )));
+    }
+    let raw: RawReport = serde_json::from_str(json_slice)
         .map_err(|e| Failure::Failed(format!("probe report: {e}")))?;
     if (raw.viewport_width, raw.viewport_height) != (viewport.width, viewport.height) {
         return Err(Failure::Failed(format!(
@@ -270,34 +294,22 @@ impl Renderer for Chrome {
                 self.binary.display()
             )));
         }
-        let dir = self.scratch.join(unique("swatch"));
-        let _ = std::fs::remove_dir_all(&dir);
-        for (path, bytes) in &swatch.files {
-            let file = dir.join(path);
-            if let Some(parent) = file.parent() {
-                std::fs::create_dir_all(parent).map_err(|e| Failure::Failed(e.to_string()))?;
-            }
-            let bytes = if *path == swatch.entry {
-                inject(&String::from_utf8_lossy(bytes)).into_bytes()
-            } else {
-                bytes.clone()
-            };
-            std::fs::write(&file, bytes).map_err(|e| Failure::Failed(e.to_string()))?;
-        }
-        let entry = dir.join(&swatch.entry);
-        if !entry.is_file() {
-            return Err(Failure::Failed(format!(
-                "entry {} is not among the files",
-                swatch.entry
-            )));
-        }
+        swatch.validate()?;
+        let nonce = generate_nonce()?;
+        let mac_key = generate_secret_bytes()?;
+        ensure_no_secrets(swatch, &[&nonce])?;
+
+        create_private_dir(&self.scratch)?;
+        let work_dir = TempDir(self.scratch.join(unique("swatch")));
+        create_private_dir(&work_dir.0)?;
+        materialize_contained(swatch, &work_dir.0.join("swatch"))?;
+
+        let server = LoopbackServer::start(swatch, viewports, &nonce, &mac_key)?;
         let mut renders = Vec::new();
         for viewport in viewports {
-            let frame = dir.join(format!("{FRAME}-{viewport}.html"));
-            std::fs::write(&frame, wrapper(&swatch.entry, *viewport))
-                .map_err(|e| Failure::Failed(e.to_string()))?;
-            let url = format!("file://{}", frame.display());
-            let shot = dir.join(format!("shot-{viewport}.png"));
+            let url = server.shot_url(*viewport);
+            let probe_url = server.probe_url(*viewport);
+            let shot = work_dir.0.join(format!("shot-{viewport}.png"));
             self.launch(
                 *viewport,
                 &[format!("--screenshot={}", shot.display())],
@@ -305,15 +317,14 @@ impl Renderer for Chrome {
             )?;
             let png = std::fs::read(&shot)
                 .map_err(|e| Failure::Failed(format!("no screenshot at {viewport}: {e}")))?;
-            let dom = self.launch(*viewport, &["--dump-dom".to_string()], &url)?;
-            let probe = read_probe(&String::from_utf8_lossy(&dom), *viewport)?;
+            let dom = self.launch(*viewport, &["--dump-dom".to_string()], &probe_url)?;
+            let probe = read_probe(&String::from_utf8_lossy(&dom), *viewport, &nonce, &mac_key)?;
             renders.push(Render {
                 viewport: *viewport,
                 png,
                 probe,
             });
         }
-        let _ = std::fs::remove_dir_all(&dir);
         Ok(renders)
     }
 }

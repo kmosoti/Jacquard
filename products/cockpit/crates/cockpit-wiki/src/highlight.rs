@@ -8,6 +8,21 @@ use iso_diagram::svg::render_svg;
 
 use crate::sanitize::escape_html_into;
 
+/// Maximum raw byte length of a Mermaid diagram block accepted for `iso-diagram` layout.
+pub const MAX_MERMAID_BYTES: usize = 16 * 1024;
+
+/// Maximum distinct Mermaid nodes accepted before falling back to plain preformatted text.
+pub const MAX_MERMAID_NODES: usize = 64;
+
+/// Maximum Mermaid edges accepted before falling back to plain preformatted text.
+pub const MAX_MERMAID_EDGES: usize = 128;
+
+/// Maximum character count per Mermaid node/edge/zone label.
+pub const MAX_MERMAID_LABEL_CHARS: usize = 128;
+
+/// Maximum Mermaid subgraphs/zones accepted per diagram.
+pub const MAX_MERMAID_ZONES: usize = 32;
+
 const RUST_KW: &[&str] = &[
     "as", "async", "await", "break", "const", "continue", "crate", "else", "enum", "extern",
     "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub",
@@ -153,6 +168,9 @@ pub fn render_mermaid_block(src: &str) -> String {
 }
 
 fn parse_mermaid_flowchart(src: &str) -> Option<Diagram> {
+    if src.len() > MAX_MERMAID_BYTES {
+        return None;
+    }
     let mut lines = src
         .lines()
         .map(str::trim)
@@ -168,13 +186,21 @@ fn parse_mermaid_flowchart(src: &str) -> Option<Diagram> {
     let mut nodes: HashMap<String, NodeId> = HashMap::new();
     let mut active_zone = None;
     let mut edge_count = 0usize;
+    let mut zone_count = 0usize;
 
     for line in lines {
         let low = line.to_ascii_lowercase();
         if let Some(rest) = low.strip_prefix("subgraph ") {
-            let title = line[9..].trim().trim_matches('"');
+            if zone_count >= MAX_MERMAID_ZONES {
+                return None;
+            }
+            let title = line.get(9..).unwrap_or("").trim().trim_matches('"');
+            if title.chars().count() > MAX_MERMAID_LABEL_CHARS {
+                return None;
+            }
             let slug = iso_diagram::model::sanitize_slug(rest);
             active_zone = Some(builder.add_zone(slug, title, ZoneStyle::Dashed, Tint::Slate, None));
+            zone_count += 1;
             continue;
         }
         if low == "end" {
@@ -182,8 +208,17 @@ fn parse_mermaid_flowchart(src: &str) -> Option<Diagram> {
             continue;
         }
         if let Some((lhs, style, label, rhs)) = split_mermaid_edge(line) {
-            let from = intern_node(&mut builder, &mut nodes, lhs, active_zone);
-            let to = intern_node(&mut builder, &mut nodes, rhs, active_zone);
+            if edge_count >= MAX_MERMAID_EDGES {
+                return None;
+            }
+            if label
+                .as_ref()
+                .is_some_and(|lbl| lbl.chars().count() > MAX_MERMAID_LABEL_CHARS)
+            {
+                return None;
+            }
+            let from = intern_node(&mut builder, &mut nodes, lhs, active_zone)?;
+            let to = intern_node(&mut builder, &mut nodes, rhs, active_zone)?;
             let mut er = builder.edge(from, to).style(style).tint(Tint::Cobalt);
             if let Some(lbl) = label {
                 er = er.label(lbl);
@@ -229,15 +264,18 @@ fn intern_node(
     nodes: &mut HashMap<String, NodeId>,
     raw: &str,
     zone: Option<iso_diagram::model::ZoneId>,
-) -> NodeId {
+) -> Option<NodeId> {
     let (id_part, label, asset) = parse_node_token(raw);
     if let Some(&existing) = nodes.get(id_part) {
-        return existing;
+        return Some(existing);
+    }
+    if nodes.len() >= MAX_MERMAID_NODES || label.chars().count() > MAX_MERMAID_LABEL_CHARS {
+        return None;
     }
     let slug = iso_diagram::model::sanitize_slug(id_part);
     let nid = builder.insert_node(slug, asset, label, zone).id();
     nodes.insert(id_part.to_owned(), nid);
-    nid
+    Some(nid)
 }
 
 fn parse_node_token(raw: &str) -> (&str, String, Asset) {

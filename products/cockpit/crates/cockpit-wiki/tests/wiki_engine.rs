@@ -175,3 +175,81 @@ fn bm25_search_index_ranks_relevant_articles_deterministically() {
     assert_eq!(hits[0].route, "/wiki/bm25");
     assert!(hits[0].score > 0.0);
 }
+
+#[test]
+fn nested_image_link_and_unsafe_urls_cannot_inject_attributes() {
+    let payload = "![outer [inner](<onerror=alert(document.domain) x>)](missing.png)";
+    let rendered = render_markdown(payload);
+    assert!(
+        rendered.html.contains(r#"alt="outer inner""#),
+        "expected flattened plain-text alt, got: {}",
+        rendered.html
+    );
+    assert!(!rendered.html.contains("<a "));
+    assert!(!rendered.html.contains("onerror="));
+
+    let rich_alt = "![a *b* `c` [link](https://example.org) ![nest](x.png)](/img.png)";
+    let rendered_rich = render_markdown(rich_alt);
+    assert!(
+        rendered_rich.html.contains(r#"alt="a b c link nest""#),
+        "unexpected alt output: {}",
+        rendered_rich.html
+    );
+
+    for bad in [
+        r#"[q](<foo"onerror="alert(1)>)"#,
+        "[sp](<foo bar>)",
+        "[ang](<onerror=alert(1) x>)",
+        "[bs](<foo\\bar>)",
+        "[ws](<https://example.org/a b>)",
+    ] {
+        let out = render_markdown(bad);
+        assert!(
+            out.html.contains(r##"href="#blocked-unsafe-scheme""##),
+            "unsafe URL {bad} was not blocked: {}",
+            out.html
+        );
+    }
+}
+
+#[test]
+fn mermaid_budgets_reject_oversized_graphs_into_fallback() {
+    use std::fmt::Write as _;
+
+    // > 16 KiB bytes
+    let mut huge_bytes = String::from("```mermaid\nflowchart LR\n");
+    while huge_bytes.len() <= 17 * 1024 {
+        huge_bytes.push_str("  A[NodeA] --> B[NodeB]\n");
+    }
+    huge_bytes.push_str("```\n");
+    let r_bytes = render_markdown(&huge_bytes);
+    assert!(r_bytes.html.contains(r#"data-renderer="fallback""#));
+    assert!(!r_bytes.html.contains("<svg "));
+
+    // > 64 nodes (65 nodes across 64 edges)
+    let mut too_many_nodes = String::from("```mermaid\nflowchart LR\n");
+    for i in 0..64 {
+        let _ = writeln!(too_many_nodes, "  N{i}[N{i}] --> N{}[N{}]", i + 1, i + 1);
+    }
+    too_many_nodes.push_str("```\n");
+    let r_nodes = render_markdown(&too_many_nodes);
+    assert!(r_nodes.html.contains(r#"data-renderer="fallback""#));
+    assert!(!r_nodes.html.contains("<svg "));
+
+    // > 128 edges (129 edges among 10 nodes)
+    let mut too_many_edges = String::from("```mermaid\nflowchart LR\n");
+    for i in 0..129 {
+        let _ = writeln!(too_many_edges, "  A{} --> A{}", i % 10, (i + 1) % 10);
+    }
+    too_many_edges.push_str("```\n");
+    let r_edges = render_markdown(&too_many_edges);
+    assert!(r_edges.html.contains(r#"data-renderer="fallback""#));
+    assert!(!r_edges.html.contains("<svg "));
+
+    // > 128 char label
+    let long_label = "x".repeat(129);
+    let long_lbl_md = format!("```mermaid\nflowchart LR\n  A[{long_label}] --> B[ok]\n```\n");
+    let r_lbl = render_markdown(&long_lbl_md);
+    assert!(r_lbl.html.contains(r#"data-renderer="fallback""#));
+    assert!(!r_lbl.html.contains("<svg "));
+}

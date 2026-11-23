@@ -8,12 +8,15 @@
 //! so the Weave is exactly `git diff` of what the Loom changed.
 #![forbid(unsafe_code)]
 
+mod prepare;
+
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use jacquard_ports::{Failure, Loom, Weave};
+pub use prepare::prepare;
 use serde_json::{Value, json};
 
 /// The model every Weave is pinned to.
@@ -74,7 +77,7 @@ impl ClaudeLoom {
     }
 }
 
-fn git(dir: &Path, args: &[&str]) -> Result<String, Failure> {
+pub(crate) fn git(dir: &Path, args: &[&str]) -> Result<String, Failure> {
     let out = Command::new("git")
         .args([
             "-c",
@@ -97,44 +100,6 @@ fn git(dir: &Path, args: &[&str]) -> Result<String, Failure> {
             String::from_utf8_lossy(&out.stderr).trim()
         )))
     }
-}
-
-/// Copies the files `git ls-files` lists under `base` (tracked, and
-/// untracked but not ignored) into `out`, and commits them there.
-///
-/// # Errors
-///
-/// Fails when a file cannot be listed or copied.
-pub fn prepare(base: &Path, out: &Path) -> Result<(), Failure> {
-    let listed = git(
-        base,
-        &[
-            "ls-files",
-            "-z",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-            ".",
-        ],
-    )?;
-    let _ = std::fs::remove_dir_all(out);
-    std::fs::create_dir_all(out).map_err(|e| Failure::Failed(e.to_string()))?;
-    for rel in listed.split('\0').filter(|s| !s.is_empty()) {
-        let from = base.join(rel);
-        if !from.is_file() {
-            continue;
-        }
-        let to = out.join(rel);
-        if let Some(parent) = to.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| Failure::Failed(e.to_string()))?;
-        }
-        std::fs::copy(&from, &to)
-            .map_err(|e| Failure::Failed(format!("{}: {e}", from.display())))?;
-    }
-    git(out, &["init", "-q", "-b", "base"])?;
-    git(out, &["add", "-A"])?;
-    git(out, &["commit", "-q", "-m", "base"])?;
-    Ok(())
 }
 
 /// Reads the CLI's stream-JSON into the model that answered and its final
