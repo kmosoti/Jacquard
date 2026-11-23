@@ -138,7 +138,7 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "cockpit-leptos"
-version = "0.1.0-alpha.1"
+version = "0.1.1-alpha.1"
 dependencies = [
  "cockpit-wiki",
  "hydration_context",
@@ -155,7 +155,7 @@ dependencies = [
 
 [[package]]
 name = "cockpit-wiki"
-version = "0.1.0-alpha.1"
+version = "0.1.1-alpha.1"
 dependencies = [
  "iso-diagram",
  "pulldown-cmark",
@@ -687,7 +687,7 @@ dependencies = [
 
 [[package]]
 name = "iso-diagram"
-version = "0.1.0-alpha.1"
+version = "0.1.1-alpha.1"
 dependencies = [
  "serde",
 ]
@@ -1449,7 +1449,7 @@ dependencies = [
 
 [[package]]
 name = "telemetry-scene"
-version = "0.1.0-alpha.1"
+version = "0.1.1-alpha.1"
 dependencies = [
  "iso-diagram",
  "serde",

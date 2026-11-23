@@ -2,6 +2,10 @@
 
 ## Active Work
 
+**Security Hardening & Release Prep (`v0.1.1-alpha.1` on `fix/v0.1.1-alpha.1-daybreak`)** on Rust `1.100.0`:
+
+- Remediated all 11 Daybreak findings across `jacquard-ports`, `jacquard` CLI (`swatch_loader`), `jacquard-renderer-chrome`, `jacquard-renderer-playwright`, `jacquard-loom-claude`, `cockpit-wiki`, `jacquard-xtask`, and `.github/workflows/release.yml` (see [`docs/releases/v0.1.1-alpha.1.md`](releases/v0.1.1-alpha.1.md) and [`SECURITY.md`](../SECURITY.md)).
+
 **Public Apache-2.0 Release & `products/cockpit` (`stack/v0.1.0-alpha.1`)** on Rust `1.100.0`:
 
 - Adopted Apache-2.0 (`LICENSE`, `NOTICE`), `SECURITY.md`, `.github/CODEOWNERS` (`* @kmosoti`), and single-branch `main` stacked `jj` PR workflow.

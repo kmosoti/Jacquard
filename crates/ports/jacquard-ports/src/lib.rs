@@ -6,11 +6,18 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::path::{Component, Path};
 
 use jacquard_core::check::Outcome;
 use jacquard_core::judgment::Verdict;
 use jacquard_core::probe::Report;
 use jacquard_core::viewport::Viewport;
+
+/// Maximum number of files accepted in a single [`SwatchSource`].
+pub const MAX_SWATCH_FILES: usize = 512;
+
+/// Maximum total byte size accepted across all files in a [`SwatchSource`].
+pub const MAX_SWATCH_BYTES: usize = 32 * 1024 * 1024;
 
 /// One candidate interface's source: relative path to bytes, and the entry
 /// page the renderer opens.
@@ -20,6 +27,82 @@ pub struct SwatchSource {
     pub files: BTreeMap<String, Vec<u8>>,
     /// The relative path of the page to open.
     pub entry: String,
+}
+
+impl SwatchSource {
+    /// Validates that a relative path within a Swatch is strictly normalized
+    /// and cannot escape a root directory on Unix or Windows.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Failure::Failed`] if `path` is empty, contains NUL or control
+    /// characters, backslashes, `:`/drive prefixes, leading/trailing/empty
+    /// segments, `.` or `..` components, or non-normal path components.
+    pub fn validate_path(path: &str) -> Result<(), Failure> {
+        if path.is_empty() {
+            return Err(Failure::Failed("swatch path must not be empty".into()));
+        }
+        if path.contains('\0') || path.chars().any(char::is_control) {
+            return Err(Failure::Failed(format!(
+                "swatch path {path:?} contains NUL or control characters"
+            )));
+        }
+        if path.starts_with('/') || path.contains('\\') || path.contains(':') {
+            return Err(Failure::Failed(format!(
+                "swatch path {path:?} must be relative without '/', '\\', or ':' prefixes"
+            )));
+        }
+        for seg in path.split('/') {
+            if seg.is_empty() || seg == "." || seg == ".." {
+                return Err(Failure::Failed(format!(
+                    "swatch path {path:?} contains invalid segment {seg:?}"
+                )));
+            }
+        }
+        let mut comps = Path::new(path).components();
+        if !comps.all(|c| matches!(c, Component::Normal(_))) {
+            return Err(Failure::Failed(format!(
+                "swatch path {path:?} contains non-normal path components"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Validates all file paths, total count/byte budgets, and that `entry`
+    /// is present in `files`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Failure::Failed`] if any path is invalid, budgets are exceeded,
+    /// or `entry` does not name a file in `files`.
+    pub fn validate(&self) -> Result<(), Failure> {
+        Self::validate_path(&self.entry)?;
+        if self.files.len() > MAX_SWATCH_FILES {
+            return Err(Failure::Failed(format!(
+                "swatch contains {} files, exceeding limit {MAX_SWATCH_FILES}",
+                self.files.len()
+            )));
+        }
+        let mut total_bytes: usize = 0;
+        for (path, bytes) in &self.files {
+            Self::validate_path(path)?;
+            total_bytes = total_bytes
+                .checked_add(bytes.len())
+                .filter(|&n| n <= MAX_SWATCH_BYTES)
+                .ok_or_else(|| {
+                    Failure::Failed(format!(
+                        "swatch total size exceeds limit {MAX_SWATCH_BYTES} bytes"
+                    ))
+                })?;
+        }
+        if !self.files.contains_key(&self.entry) {
+            return Err(Failure::Failed(format!(
+                "entry {} is not among the files",
+                self.entry
+            )));
+        }
+        Ok(())
+    }
 }
 
 /// A Swatch rendered at one viewport.
@@ -161,4 +244,54 @@ pub trait Ledger {
     ///
     /// Returns a [`Failure`] when the stream cannot be read.
     fn read(&self, kind: &str) -> Result<Vec<String>, Failure>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn valid_source() -> SwatchSource {
+        SwatchSource {
+            entry: "index.html".into(),
+            files: BTreeMap::from([
+                ("index.html".into(), b"<p>ok</p>".to_vec()),
+                ("css/app.css".into(), b"p{}".to_vec()),
+            ]),
+        }
+    }
+
+    #[test]
+    fn valid_swatch_source_passes() {
+        assert!(valid_source().validate().is_ok());
+    }
+
+    #[test]
+    fn invalid_paths_and_missing_entry_are_rejected() {
+        for bad in [
+            "",
+            ".",
+            "..",
+            "../evil.html",
+            "a/../b.html",
+            "a/./b.html",
+            "/etc/passwd",
+            "//host/share/a",
+            "a//b.html",
+            "a/",
+            r"a\b.html",
+            r"..\evil.html",
+            "C:foo.html",
+            "C:/foo.html",
+            r"\\?\C:\foo.html",
+            "index.html\0.png",
+            "bad\npath.html",
+        ] {
+            let mut s = valid_source();
+            s.files.insert(bad.into(), b"x".to_vec());
+            assert!(s.validate().is_err(), "expected rejection for path {bad:?}");
+        }
+        let mut missing = valid_source();
+        missing.entry = "missing.html".into();
+        assert!(missing.validate().is_err());
+    }
 }

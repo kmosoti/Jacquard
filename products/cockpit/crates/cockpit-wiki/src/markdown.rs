@@ -10,7 +10,7 @@ use pulldown_cmark::{Alignment, CodeBlockKind, Event, HeadingLevel, Options, Par
 use crate::highlight::{highlight_code, render_mermaid_block};
 use crate::model::Heading;
 pub(crate) use crate::sanitize::escape_html_into;
-use crate::sanitize::{dedup_id, sanitize_link_url, sanitize_media_url, slugify};
+use crate::sanitize::{ImageCapture, dedup_id, sanitize_link_url, slugify};
 
 /// Output of rendering Markdown through [`render_markdown`].
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -55,6 +55,7 @@ pub fn render_markdown(markdown: &str) -> RenderedMarkdown {
     let mut out = RenderedMarkdown::default();
     let mut used_ids: HashMap<String, usize> = HashMap::new();
     let mut heading: Option<HeadingCapture> = None;
+    let mut image: Option<ImageCapture> = None;
     let mut mode = BlockMode::None;
     let mut code_buf = String::new();
     let mut code_lang = String::new();
@@ -64,6 +65,19 @@ pub fn render_markdown(markdown: &str) -> RenderedMarkdown {
     let mut col_idx = 0usize;
 
     for event in Parser::new_ext(markdown, opts) {
+        if let Some(img) = image.as_mut() {
+            if img.push_event(&event, &mut out.word_count)
+                && let Some(finished) = image.take()
+            {
+                let target = current_buf(&mut out.html, &mut heading);
+                finished.emit_into(target);
+                if let Some(cap) = &mut heading {
+                    cap.text.push_str(&finished.alt);
+                }
+            }
+            continue;
+        }
+
         match event {
             Event::Start(tag) => match tag {
                 Tag::Heading { level, id, .. } => {
@@ -125,17 +139,7 @@ pub fn render_markdown(markdown: &str) -> RenderedMarkdown {
                 Tag::Image {
                     dest_url, title, ..
                 } => {
-                    let src = sanitize_media_url(&dest_url);
-                    let target = current_buf(&mut out.html, &mut heading);
-                    target.push_str("<img src=\"");
-                    escape_html_into(target, &src);
-                    target.push_str("\" loading=\"lazy\"");
-                    if !title.is_empty() {
-                        target.push_str(" title=\"");
-                        escape_html_into(target, &title);
-                        target.push('"');
-                    }
-                    target.push_str(" alt=\"");
+                    image = Some(ImageCapture::new(&dest_url, &title));
                 }
                 Tag::Table(align) => {
                     alignments = align;
@@ -222,7 +226,7 @@ pub fn render_markdown(markdown: &str) -> RenderedMarkdown {
                     current_buf(&mut out.html, &mut heading).push_str("</del>");
                 }
                 TagEnd::Link => current_buf(&mut out.html, &mut heading).push_str("</a>"),
-                TagEnd::Image => current_buf(&mut out.html, &mut heading).push_str("\" />"),
+                TagEnd::Image => {}
                 TagEnd::Table => {
                     if in_tbody {
                         out.html.push_str("</tbody></table>\n");
@@ -299,6 +303,10 @@ pub fn render_markdown(markdown: &str) -> RenderedMarkdown {
                 target.push_str("</code>");
             }
         }
+    }
+    if let Some(finished) = image.take() {
+        let target = current_buf(&mut out.html, &mut heading);
+        finished.emit_into(target);
     }
     out
 }

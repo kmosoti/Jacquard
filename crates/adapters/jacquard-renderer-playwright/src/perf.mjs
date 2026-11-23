@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 process.env.PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS = "1";
 const job = JSON.parse(readFileSync(0, "utf8"));
 const { chromium } = await import(job.playwright);
+const targetOrigin = new URL(job.url).origin;
 const observe = () => {
   window.__perf = { lcp: 0, cls: 0, longtasks: [], fcp: 0 };
   new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__perf.lcp = e.renderTime || e.loadTime || e.startTime; }).observe({ type: "largest-contentful-paint", buffered: true });
@@ -16,11 +17,29 @@ const observe = () => {
 for (let run = 0; run < job.runs; run++) {
   const browser = await chromium.launch({
     executablePath: job.chrome,
-    args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", "--enable-webgl"],
+    args: [
+      "--use-angle=swiftshader",
+      "--enable-unsafe-swiftshader",
+      "--ignore-gpu-blocklist",
+      "--enable-webgl",
+      "--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1 , EXCLUDE localhost",
+      "--proxy-server=direct://",
+      "--disable-background-networking",
+      "--disable-extensions",
+    ],
   });
   const out = { url: job.url, profile: job.profile, run };
   try {
     const context = await browser.newContext({ viewport: { width: job.viewport[0], height: job.viewport[1] }, deviceScaleFactor: 1 });
+    await context.route("**/*", (route) => {
+      try {
+        const reqUrl = new URL(route.request().url());
+        if (reqUrl.origin === targetOrigin && (reqUrl.protocol === "http:" || reqUrl.protocol === "https:")) {
+          return route.continue();
+        }
+      } catch {}
+      return route.abort("blockedbyclient");
+    });
     let bytes = 0, requests = 0, inflight = 0, last = Date.now();
     context.on("request", () => { inflight++; requests++; last = Date.now(); });
     const done = async (r) => {

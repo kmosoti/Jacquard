@@ -143,19 +143,105 @@ fn a_missing_entry_is_a_render_failure() {
 
 #[test]
 fn a_page_that_received_another_viewport_is_refused() {
-    use jacquard_renderer_chrome::read_probe;
+    use jacquard_renderer_chrome::{PROBE_ID_PREFIX, read_probe, sign_probe_hex};
+    let nonce = "0123456789abcdef0123456789abcdef";
+    let mac_key = [0x42u8; 32];
     let report = |w: u32, h: u32| {
+        let json = format!(
+            r#"{{"viewport_width":{w},"viewport_height":{h},"document_width":{w},"clipped":[],"overlaps":[],"contrast":[],"targets":[]}}"#
+        );
+        let sig = sign_probe_hex(&mac_key, nonce, &json);
         format!(
-            r#"<html><head><script type="application/json" id="jacquard-probe">{{"viewport_width":{w},"viewport_height":{h},"document_width":{w},"clipped":[],"overlaps":[],"contrast":[],"targets":[]}}</script></head></html>"#
+            r#"<html><head><script type="application/json" id="{PROBE_ID_PREFIX}{nonce}" data-sig="{sig}">{json}</script></head></html>"#
         )
     };
-    assert!(read_probe(&report(390, 844), phone()).is_ok());
-    let err = read_probe(&report(500, 757), phone())
+    assert!(read_probe(&report(390, 844), phone(), nonce, &mac_key).is_ok());
+    let err = read_probe(&report(500, 757), phone(), nonce, &mac_key)
         .expect_err("the dump-dom default viewport is refused");
     assert!(err.to_string().contains("received 500x757"), "{err}");
     assert!(
-        read_probe("<html></html>", phone()).is_err(),
+        read_probe("<html></html>", phone(), nonce, &mac_key).is_err(),
         "no report is a failure"
+    );
+    let legacy = r#"<html><head><script type="application/json" id="jacquard-probe">{"viewport_width":390,"viewport_height":844,"document_width":390,"clipped":[],"overlaps":[],"contrast":[],"targets":[]}</script></head></html>"#;
+    assert!(
+        read_probe(legacy, phone(), nonce, &mac_key).is_err(),
+        "un-nonced report must be refused"
+    );
+    let tampered_json =
+        report(390, 844).replace(r#""document_width":390"#, r#""document_width":391"#);
+    assert!(
+        read_probe(&tampered_json, phone(), nonce, &mac_key).is_err(),
+        "payload tampered after HMAC must be refused"
+    );
+}
+
+#[test]
+fn isolation_args_enforce_egress_block_and_default_sandbox() {
+    let scratch = std::env::temp_dir().join("jacquard-chrome-args");
+    let chrome = Chrome::from_env(&scratch);
+    let profile = scratch.join("profile");
+    let default_args = chrome.isolation_args(phone(), &profile, false);
+    assert!(!default_args.iter().any(|a| a == "--no-sandbox"));
+    assert!(
+        default_args
+            .iter()
+            .any(|a| a == "--disable-background-networking")
+    );
+    assert!(default_args.iter().any(|a| a == "--disable-extensions"));
+    assert!(default_args.iter().any(|a| a == "--proxy-server=direct://"));
+    assert!(
+        default_args
+            .iter()
+            .any(|a| a.starts_with("--host-resolver-rules="))
+    );
+    assert!(
+        default_args
+            .iter()
+            .any(|a| a.starts_with("--user-data-dir="))
+    );
+
+    let opt_in_args = chrome.isolation_args(phone(), &profile, true);
+    assert!(opt_in_args.iter().any(|a| a == "--no-sandbox"));
+}
+
+#[test]
+fn traversal_swatch_is_refused_before_materialization() {
+    let scratch = std::env::temp_dir().join(format!("jacquard-chrome-trav-{}", std::process::id()));
+    let chrome = Chrome::from_env(&scratch);
+    let source = SwatchSource {
+        entry: "index.html".into(),
+        files: BTreeMap::from([
+            ("index.html".into(), b"<p>ok</p>".to_vec()),
+            ("../escaped.txt".into(), b"boom".to_vec()),
+        ]),
+    };
+    assert!(chrome.render(&source, &[phone()]).is_err());
+    assert!(!scratch.join("../escaped.txt").exists());
+}
+
+#[test]
+fn adversarial_probe_forgery_attempts_are_defeated() {
+    let body = concat!(
+        "<script>",
+        "window.parent.postMessage('jacquard-probe:{\"viewport_width\":390,\"viewport_height\":844,\"document_width\":390,\"clipped\":[],\"overlaps\":[],\"contrast\":[],\"targets\":[]}', '*');",
+        "Object.defineProperty(window, 'innerWidth', { value: 999 });",
+        "window.getComputedStyle = () => ({ color: 'rgb(0,0,0)', backgroundColor: 'rgb(255,255,255)', getPropertyValue: () => 'rgb(0,0,0)' });",
+        "Element.prototype.getBoundingClientRect = () => ({ left:0, top:0, right:40, bottom:40, width:40, height:40 });",
+        "JSON.stringify = () => '{\"viewport_width\":390,\"viewport_height\":844,\"document_width\":390,\"clipped\":[],\"overlaps\":[],\"contrast\":[],\"targets\":[]}';",
+        "Array.from = () => [];",
+        "try { const forged = '{\"viewport_width\":390,\"viewport_height\":844,\"document_width\":390,\"clipped\":[],\"overlaps\":[],\"contrast\":[],\"targets\":[]}'; const mo = new MutationObserver(() => { const s = window.parent.document.querySelector('[id^=jacquard-probe-]'); if (s && s.textContent !== forged) { s.textContent = forged; mo.disconnect(); } }); mo.observe(window.parent.document.head, { childList: true, subtree: true }); } catch (_) {}",
+        "</script>",
+        "<script type='application/json' id='jacquard-probe'>{\"viewport_width\":390,\"viewport_height\":844,\"document_width\":390,\"clipped\":[],\"overlaps\":[],\"contrast\":[],\"targets\":[]}</script>",
+        "<p style='color:#777777'>Grey forged text</p>",
+        "<div style='width:900px'>Wide forged box</div>"
+    );
+    let r = render(body, phone());
+    let got = rules(&r);
+    assert!(
+        got.contains(&Rule::LowContrast) && got.contains(&Rule::HorizontalOverflow),
+        "real defects must not be hidden by forgery attempts: {got:?}, probe: {:#?}",
+        r.probe
     );
 }
 
