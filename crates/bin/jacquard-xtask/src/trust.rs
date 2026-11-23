@@ -8,12 +8,13 @@
 //! gate detects; it does not judge. A weakening inside a declared commit is
 //! the reviewer's to catch, and the escape-hatch scan is syntactic.
 
-use std::collections::BTreeSet;
 use std::path::Path;
 
 use serde::Deserialize;
 
 use crate::finding::Finding;
+use crate::mutants::{self, Corpus};
+pub use crate::trust_patch::parse_patch;
 use crate::util;
 
 /// Every failure code this gate can print for a commit.
@@ -142,6 +143,9 @@ pub struct Commit {
     /// Added lines, as (path, line).
     #[serde(default)]
     pub added: Vec<(String, String)>,
+    /// Deleted or weakened production semantic mutants in `tests/semantic-mutants/corpus.toml`.
+    #[serde(default)]
+    pub mutants_escape: Vec<String>,
 }
 
 /// The `Trust-Boundary:` values in a message, one per trailer line.
@@ -194,14 +198,18 @@ pub fn check_commit(policy: &Policy, commit: &Commit) -> Vec<Finding> {
     let escape = commit
         .added
         .iter()
-        .find(|(path, line)| policy.is_escape(path, line));
+        .find(|(path, line)| policy.is_escape(path, line))
+        .map(|(path, line)| format!("{path} adds `{}`", line.trim()))
+        .or_else(|| {
+            commit
+                .mutants_escape
+                .first()
+                .map(|reason| format!("{} {reason}", mutants::PRODUCTION_CORPUS))
+        });
     match (escape, has("escape-hatch")) {
-        (Some((path, line)), false) => findings.push(Finding::new(
+        (Some(detail), false) => findings.push(Finding::new(
             "escape-hatch-added",
-            at(format!(
-                "{path} adds `{}` without `{TRAILER} escape-hatch`",
-                line.trim()
-            )),
+            at(format!("{detail} without `{TRAILER} escape-hatch`")),
         )),
         (None, true) => findings.push(Finding::new(
             "trailer-without-change",
@@ -254,62 +262,49 @@ pub fn collect(repo: &Path, base: &str) -> Result<Vec<Commit>, String> {
             id,
         ])?;
         let (paths, added) = parse_patch(&patch);
+        let mutants_escape = if paths.iter().any(|p| p == mutants::PRODUCTION_CORPUS) {
+            check_mutants_corpus_commit(&git, id)?
+        } else {
+            Vec::new()
+        };
         commits.push(Commit {
             id: id.to_string(),
             message,
             paths,
             added,
+            mutants_escape,
         });
     }
     Ok(commits)
 }
 
-/// Splits a unified or combined (`--cc`) patch into its changed paths and added lines.
-#[must_use]
-pub fn parse_patch(patch: &str) -> (Vec<String>, Vec<(String, String)>) {
-    let mut paths = BTreeSet::new();
-    let mut added = Vec::new();
-    let mut current = String::new();
-    let mut combined_parents: usize = 0;
-    let mut in_hunk = false;
-    for line in patch.lines() {
-        if let Some(rest) = line.strip_prefix("diff --git a/") {
-            in_hunk = false;
-            combined_parents = 0;
-            if let Some((a, b)) = rest.split_once(" b/") {
-                paths.insert(a.to_string());
-                paths.insert(b.to_string());
-                current = b.to_string();
-            }
-        } else if let Some(rest) = line
-            .strip_prefix("diff --cc ")
-            .or_else(|| line.strip_prefix("diff --combined "))
+fn check_mutants_corpus_commit(
+    git: &impl Fn(&[&str]) -> Result<String, String>,
+    id: &str,
+) -> Result<Vec<String>, String> {
+    let parents_line = git(&["rev-list", "--parents", "-n", "1", id])?;
+    let parents: Vec<&str> = parents_line.split_whitespace().skip(1).collect();
+    if parents.is_empty() {
+        return Ok(Vec::new());
+    }
+    let after_spec = format!("{id}:{}", mutants::PRODUCTION_CORPUS);
+    let Ok(after_raw) = git(&["show", &after_spec]) else {
+        return Ok(vec!["deleted production semantic-mutant corpus".into()]);
+    };
+    let after = match Corpus::parse(&after_raw, &after_spec) {
+        Ok(c) => c,
+        Err(e) => return Ok(vec![format!("invalid or empty corpus ({e})")]),
+    };
+    let mut violations = Vec::new();
+    for parent in parents {
+        let before_spec = format!("{parent}:{}", mutants::PRODUCTION_CORPUS);
+        if let Ok(before_raw) = git(&["show", &before_spec])
+            && let Ok(before) = Corpus::parse(&before_raw, &before_spec)
         {
-            in_hunk = false;
-            combined_parents = 2;
-            paths.insert(rest.to_string());
-            current = rest.to_string();
-        } else if line.starts_with("@@") {
-            in_hunk = true;
-            if combined_parents > 0 {
-                let ats = line.bytes().take_while(|&b| b == b'@').count();
-                combined_parents = ats.saturating_sub(1).max(2);
-            }
-        } else if in_hunk && combined_parents == 0 {
-            if let Some(text) = line.strip_prefix('+') {
-                added.push((current.clone(), text.to_string()));
-            }
-        } else if in_hunk
-            && combined_parents > 0
-            && line.len() >= combined_parents
-            && line.as_bytes()[..combined_parents]
-                .iter()
-                .all(|&b| b == b'+')
-        {
-            added.push((current.clone(), line[combined_parents..].to_string()));
+            violations.extend(mutants::diff_corpora(&before, &after));
         }
     }
-    (paths.into_iter().collect(), added)
+    Ok(violations)
 }
 
 /// Runs the gate on a repository against a base.

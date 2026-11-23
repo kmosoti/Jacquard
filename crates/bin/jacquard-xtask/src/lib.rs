@@ -9,9 +9,12 @@ pub mod finding;
 pub mod layers;
 pub mod mutants;
 pub mod purity;
+pub mod purity_lex;
+pub mod purity_scan;
 pub mod receipts;
 pub mod registry;
 pub mod trust;
+mod trust_patch;
 pub mod util;
 
 use std::path::{Path, PathBuf};

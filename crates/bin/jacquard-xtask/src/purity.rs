@@ -1,12 +1,11 @@
 //! `check-core-purity`: the core purity policy of ADR-0000 over every crate
 //! the layer policy assigns to `core`.
 //!
-//! A core crate is `no_std`, forbids unsafe code, has no build script, and
-//! takes dependencies only from other core crates or the allowlist in
-//! `crates/core/PURITY.toml`, for every dependency kind. Its sources never
-//! name `std`. What the compiler cannot see (reading the clock through an
-//! allowlisted crate, for example) remains a review matter; this gate says
-//! so rather than pretending otherwise.
+//! A core crate is `no_std`, forbids unsafe code, inherits workspace lints
+//! (`[lints] workspace = true` with `unsafe_code = "forbid"`), has no build
+//! script, takes dependencies only from other core crates or the allowlist in
+//! `crates/core/PURITY.toml`, keeps all compiled sources inside `src/` without
+//! symlinks or escaping `#[path]` / `include*!` directives, and never uses `std`.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -16,6 +15,8 @@ use serde_json::Value;
 
 use crate::finding::Finding;
 use crate::layers::Policy;
+use crate::purity_lex::tokenize;
+use crate::purity_scan::{find_std_use, has_crate_inner_attrs, scan_source_directives};
 use crate::util;
 
 /// Every failure code this gate can print.
@@ -25,6 +26,8 @@ pub const CODES: &[&str] = &[
     "core-not-no-std",
     "core-unsafe-not-forbidden",
     "core-uses-std",
+    "core-source-escapes-src",
+    "core-missing-workspace-lints",
 ];
 
 /// `crates/core/PURITY.toml`.
@@ -65,10 +68,42 @@ pub struct CoreCrate {
     pub dependencies: Vec<(String, String)>,
     /// Whether the package has a build script.
     pub has_build_script: bool,
+    /// Whether `[lints] workspace = true` and workspace `unsafe_code = "forbid"` hold.
+    pub inherits_workspace_forbid_unsafe: bool,
     /// The library root's source, if the package has a library.
     pub lib_source: Option<String>,
-    /// Every `.rs` file under the library's source directory, as (path, text).
+    /// Every compiled source under `src/`, as (path, text).
     pub sources: Vec<(String, String)>,
+    /// Any symlink or `#[path]` / `include*!` directive escaping `src/`.
+    pub source_escapes: Vec<String>,
+}
+
+fn workspace_forbids_unsafe(workspace_manifest: &Path) -> bool {
+    let Ok(raw) = std::fs::read_to_string(workspace_manifest) else {
+        return false;
+    };
+    let Ok(val) = toml::from_str::<toml::Value>(&raw) else {
+        return false;
+    };
+    val.get("workspace")
+        .and_then(|w| w.get("lints"))
+        .and_then(|l| l.get("rust"))
+        .and_then(|r| r.get("unsafe_code"))
+        .and_then(toml::Value::as_str)
+        == Some("forbid")
+}
+
+fn crate_inherits_workspace_lints(manifest_path: &Path) -> bool {
+    let Ok(raw) = std::fs::read_to_string(manifest_path) else {
+        return false;
+    };
+    let Ok(val) = toml::from_str::<toml::Value>(&raw) else {
+        return false;
+    };
+    val.get("lints")
+        .and_then(|l| l.get("workspace"))
+        .and_then(toml::Value::as_bool)
+        == Some(true)
 }
 
 /// Collects the core crates named by the layer policy from `cargo metadata`
@@ -78,6 +113,10 @@ pub struct CoreCrate {
 ///
 /// Returns a message when a source file cannot be read.
 pub fn collect(policy: &Policy, meta: &Value) -> Result<Vec<CoreCrate>, String> {
+    let ws_forbids = meta["workspace_root"]
+        .as_str()
+        .is_some_and(|r| workspace_forbids_unsafe(&Path::new(r).join("Cargo.toml")));
+
     let mut crates = Vec::new();
     for package in meta["packages"].as_array().into_iter().flatten() {
         let Some(name) = package["name"].as_str() else {
@@ -86,6 +125,10 @@ pub fn collect(policy: &Policy, meta: &Value) -> Result<Vec<CoreCrate>, String> 
         if policy.layer_of(name) != Some("core") {
             continue;
         }
+        let inherits_workspace_forbid_unsafe = ws_forbids
+            && package["manifest_path"]
+                .as_str()
+                .is_some_and(|p| crate_inherits_workspace_lints(Path::new(p)));
         let dependencies = package["dependencies"]
             .as_array()
             .into_iter()
@@ -113,69 +156,94 @@ pub fn collect(policy: &Policy, meta: &Value) -> Result<Vec<CoreCrate>, String> 
             .find(|t| has_kind(t, "lib"))
             .and_then(|t| t["src_path"].as_str())
             .map(PathBuf::from);
-        let (lib_source, sources) = match &lib_path {
+        let (lib_source, sources, source_escapes) = match &lib_path {
             Some(path) => {
                 let dir = path.parent().unwrap_or(Path::new("."));
-                (Some(util::read(path)?), read_sources(dir)?)
+                let lib_text = util::read(path)?;
+                let (sources, escapes) = collect_sources_and_directives(dir)?;
+                (Some(lib_text), sources, escapes)
             }
-            None => (None, Vec::new()),
+            None => (None, Vec::new(), Vec::new()),
         };
         crates.push(CoreCrate {
             name: name.to_string(),
             dependencies,
             has_build_script,
+            inherits_workspace_forbid_unsafe,
             lib_source,
             sources,
+            source_escapes,
         });
     }
     crates.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(crates)
 }
 
-fn read_sources(dir: &Path) -> Result<Vec<(String, String)>, String> {
+type CollectedSources = (Vec<(String, String)>, Vec<String>);
+
+fn collect_sources_and_directives(src_dir: &Path) -> Result<CollectedSources, String> {
+    let canon_src =
+        std::fs::canonicalize(src_dir).map_err(|e| format!("{}: {e}", src_dir.display()))?;
+    let mut visited = BTreeSet::new();
     let mut out = Vec::new();
-    let mut stack = vec![dir.to_path_buf()];
+    let mut escapes = Vec::new();
+    let mut queue = Vec::new();
+    let mut stack = vec![canon_src.clone()];
+
     while let Some(dir) = stack.pop() {
         let entries = std::fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
         for entry in entries {
             let path = entry.map_err(|e| e.to_string())?.path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if path.extension().is_some_and(|e| e == "rs") {
-                out.push((path.display().to_string(), util::read(&path)?));
+            let meta =
+                std::fs::symlink_metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+            if meta.file_type().is_symlink() {
+                escapes.push(format!("{}: symlink inside crate src/", path.display()));
+                continue;
+            }
+            if meta.is_dir() {
+                let canon =
+                    std::fs::canonicalize(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+                if canon.starts_with(&canon_src) {
+                    stack.push(canon);
+                } else {
+                    escapes.push(format!("{}: directory escapes src/", path.display()));
+                }
+            } else if meta.is_file() && path.extension().is_some_and(|e| e == "rs") {
+                let canon =
+                    std::fs::canonicalize(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+                if visited.insert(canon.clone()) {
+                    queue.push(canon);
+                }
             }
         }
     }
+
+    while let Some(file_path) = queue.pop() {
+        let text = util::read(&file_path)?;
+        let tokens = tokenize(&text);
+        let (dir_escapes, included) = scan_source_directives(&tokens, &file_path, &canon_src);
+        for (line, detail) in dir_escapes {
+            escapes.push(format!("{}:{line}: {detail}", file_path.display()));
+        }
+        for inc in included {
+            if visited.insert(inc.clone()) {
+                queue.push(inc);
+            }
+        }
+        out.push((file_path.display().to_string(), text));
+    }
+
     out.sort();
-    Ok(out)
+    escapes.sort();
+    Ok((out, escapes))
 }
 
-/// The first place a source names `std`, as (line number, line), skipping
-/// comment lines. `core::` and `alloc::` do not match.
+/// The first place a source names `std`, as `(line number, line)`, ignoring
+/// comments and string literals. `core::` and `alloc::` do not match.
 #[must_use]
 pub fn std_use(text: &str) -> Option<(usize, String)> {
-    for (index, line) in text.lines().enumerate() {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("//") {
-            continue;
-        }
-        let names_std = trimmed.contains("extern crate std")
-            || trimmed.match_indices("std::").any(|(at, _)| {
-                at == 0
-                    || !trimmed[..at]
-                        .chars()
-                        .next_back()
-                        .is_some_and(|c| c.is_alphanumeric() || c == '_')
-            });
-        if names_std {
-            return Some((index + 1, trimmed.to_string()));
-        }
-    }
-    None
-}
-
-fn has_attribute(source: &str, accepted: &[&str]) -> bool {
-    source.lines().any(|l| accepted.contains(&l.trim()))
+    let tokens = tokenize(text);
+    find_std_use(&tokens, text)
 }
 
 /// Checks the core crates against the purity policy, returning sorted findings.
@@ -200,17 +268,32 @@ pub fn check(purity: &Purity, core: &BTreeSet<String>, crates: &[CoreCrate]) -> 
                 format!("{name} has a build script"),
             ));
         }
+        if !krate.inherits_workspace_forbid_unsafe {
+            findings.push(Finding::new(
+                "core-missing-workspace-lints",
+                format!(
+                    "{name}'s Cargo.toml must inherit [lints] workspace = true with unsafe_code = \"forbid\""
+                ),
+            ));
+        }
         let lib = krate.lib_source.as_deref().unwrap_or_default();
-        if !has_attribute(lib, &["#![no_std]", "#![cfg_attr(not(test), no_std)]"]) {
+        let (has_no_std, has_forbid_unsafe) = has_crate_inner_attrs(&tokenize(lib));
+        if !has_no_std {
             findings.push(Finding::new(
                 "core-not-no-std",
                 format!("{name}'s library root does not declare #![no_std]"),
             ));
         }
-        if !has_attribute(lib, &["#![forbid(unsafe_code)]"]) {
+        if !has_forbid_unsafe {
             findings.push(Finding::new(
                 "core-unsafe-not-forbidden",
                 format!("{name}'s library root does not declare #![forbid(unsafe_code)]"),
+            ));
+        }
+        for esc in &krate.source_escapes {
+            findings.push(Finding::new(
+                "core-source-escapes-src",
+                format!("{name}: {esc}"),
             ));
         }
         for (path, text) in &krate.sources {

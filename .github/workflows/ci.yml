@@ -31,6 +31,18 @@ jobs:
             cargo install --locked wasm-bindgen-cli --version 0.2.130
           fi
 
+      - name: Probe Chrome sandbox support
+        run: |
+          tmp_profile="$(mktemp -d)"
+          chmod 0700 "$tmp_profile"
+          if "$JACQUARD_CHROME" --headless --disable-gpu --user-data-dir="$tmp_profile" --dump-dom 'data:text/html,<h1>ok</h1>' >/dev/null 2>&1; then
+            echo "Chrome sandbox enabled cleanly"
+          else
+            echo "Chrome userns sandbox unavailable on runner; opting into JACQUARD_ALLOW_NO_SANDBOX=1"
+            echo "JACQUARD_ALLOW_NO_SANDBOX=1" >> "$GITHUB_ENV"
+          fi
+          rm -rf "$tmp_profile"
+
       # The base for check-trust-boundary: the target branch for a pull
       # request, the previous head for a push to the default branch, and the
       # default branch otherwise. The first push of the default branch uses

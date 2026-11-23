@@ -6,14 +6,17 @@ on:
       - "v*"
   workflow_dispatch:
 
-permissions:
-  contents: write
-  id-token: write
-  attestations: write
+permissions: {}
 
 jobs:
-  build-and-attest:
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      release_version: ${{ steps.meta.outputs.release_version }}
+      jacquard_archive: ${{ steps.pkg_cli.outputs.jacquard_archive }}
+      cockpit_archive: ${{ steps.pkg_cockpit.outputs.cockpit_archive }}
     env:
       JACQUARD_CHROME: /usr/bin/google-chrome
     steps:
@@ -24,6 +27,46 @@ jobs:
       - name: Toolchain from rust-toolchain.toml
         run: rustup show active-toolchain || rustup toolchain install
 
+      - name: Verify origin/main ancestry and release tag version
+        id: meta
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main; then
+            echo "::error::Revision ${GITHUB_SHA} is not an ancestor of origin/main" >&2
+            exit 1
+          fi
+          root_ver="$(awk -F'"' '/^version *= *"/ {print $2; exit}' Cargo.toml)"
+          cockpit_ver="$(awk -F'"' '/^version *= *"/ {print $2; exit}' products/cockpit/Cargo.toml)"
+          if [ "$root_ver" != "$cockpit_ver" ]; then
+            echo "::error::Version mismatch: Cargo.toml=${root_ver} vs products/cockpit/Cargo.toml=${cockpit_ver}" >&2
+            exit 1
+          fi
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ] || [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
+            tag_name="${GITHUB_REF_NAME#refs/tags/}"
+            tag_ver="${tag_name#v}"
+            if [ "$tag_name" = "$tag_ver" ] || [ "$tag_ver" != "$root_ver" ]; then
+              echo "::error::Tag ${tag_name} does not match Cargo.toml version ${root_ver}" >&2
+              exit 1
+            fi
+            if [ ! -f "docs/releases/${tag_name}.md" ]; then
+              echo "::error::Missing release notes docs/releases/${tag_name}.md" >&2
+              exit 1
+            fi
+            version="$tag_name"
+          else
+            version="v${root_ver}"
+          fi
+          base="$(git rev-list --max-parents=0 HEAD | tail -n 1)"
+          epoch="$(git log -1 --format=%ct)"
+          mkdir -p dist
+          {
+            echo "TRUST_BASE=$base"
+            echo "SOURCE_DATE_EPOCH=$epoch"
+            echo "RELEASE_VERSION=$version"
+            echo "RUSTC_VERSION=$(rustc -V)"
+          } >> "$GITHUB_ENV"
+          echo "release_version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Install release tooling (binaryen, zstd, jq, wasm-bindgen-cli 0.2.130)
         run: |
           sudo apt-get update
@@ -32,23 +75,23 @@ jobs:
             cargo install --locked wasm-bindgen-cli --version 0.2.130
           fi
 
-      - name: Resolve release metadata and trust-boundary base
+      - name: Probe Chrome sandbox support
         run: |
-          base="$(git rev-list --max-parents=0 HEAD | tail -n 1)"
-          epoch="$(git log -1 --format=%ct)"
-          version="${GITHUB_REF_NAME#refs/tags/}"
-          mkdir -p dist
-          {
-            echo "TRUST_BASE=$base"
-            echo "SOURCE_DATE_EPOCH=$epoch"
-            echo "RELEASE_VERSION=$version"
-            echo "RUSTC_VERSION=$(rustc -V)"
-          } >> "$GITHUB_ENV"
+          tmp_profile="$(mktemp -d)"
+          chmod 0700 "$tmp_profile"
+          if "$JACQUARD_CHROME" --headless --disable-gpu --user-data-dir="$tmp_profile" --dump-dom 'data:text/html,<h1>ok</h1>' >/dev/null 2>&1; then
+            echo "Chrome sandbox enabled cleanly"
+          else
+            echo "Chrome userns sandbox unavailable on runner; opting into JACQUARD_ALLOW_NO_SANDBOX=1"
+            echo "JACQUARD_ALLOW_NO_SANDBOX=1" >> "$GITHUB_ENV"
+          fi
+          rm -rf "$tmp_profile"
 
       - name: Run fast verification checks with receipts
         run: cargo xtask checks --profile fast --base "$TRUST_BASE" --out dist/fast-receipts.ndjson
 
       - name: Package attested jacquard CLI archive (tar.zst)
+        id: pkg_cli
         run: |
           cargo build --release --locked --package jacquard
           root_target="${CARGO_TARGET_DIR:-target}"
@@ -61,9 +104,12 @@ jobs:
           out="dist/jacquard-${RELEASE_VERSION}-x86_64-unknown-linux-gnu.tar.zst"
           tar --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner \
             -C "$stage" -cf - . | zstd -19 -T0 -o "$out"
-          echo "JACQUARD_ARCHIVE=$(basename "$out")" >> "$GITHUB_ENV"
+          archive="$(basename "$out")"
+          echo "JACQUARD_ARCHIVE=$archive" >> "$GITHUB_ENV"
+          echo "jacquard_archive=$archive" >> "$GITHUB_OUTPUT"
 
       - name: Package reproducible cockpit-dist WASM/SSR bundle (tar.zst)
+        id: pkg_cockpit
         run: |
           cockpit_target="${CARGO_TARGET_DIR:-products/cockpit/target}"
           cargo build --manifest-path products/cockpit/Cargo.toml --release --locked -p iso-diagram --bin iso-render
@@ -99,11 +145,13 @@ jobs:
           out="dist/cockpit-dist-${RELEASE_VERSION}.tar.zst"
           tar --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner \
             -C "$stage" -cf - . | zstd -19 -T0 -o "$out"
+          archive="$(basename "$out")"
           {
-            echo "COCKPIT_ARCHIVE=$(basename "$out")"
+            echo "COCKPIT_ARCHIVE=$archive"
             echo "COCKPIT_WASM_BYTES=$wasm_bytes"
             echo "COCKPIT_WASM_SHA256=$wasm_sha"
           } >> "$GITHUB_ENV"
+          echo "cockpit_archive=$archive" >> "$GITHUB_OUTPUT"
 
       - name: Emit SHA256SUMS and RELEASE-EVIDENCE.json
         run: |
@@ -147,29 +195,72 @@ jobs:
             }' > dist/RELEASE-EVIDENCE.json
           sha256sum dist/RELEASE-EVIDENCE.json | sed 's|dist/||' >> dist/SHA256SUMS
 
+      - name: Upload release bundle artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: jacquard-release-${{ steps.meta.outputs.release_version }}
+          path: dist/
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Re-verify main ancestry and refuse release overwrite
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main; then
+            echo "::error::Revision ${GITHUB_SHA} is not an ancestor of origin/main" >&2
+            exit 1
+          fi
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "::error::Release ${GITHUB_REF_NAME} already exists; refusing overwrite" >&2
+            exit 1
+          fi
+
+      - name: Download verified build bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: jacquard-release-${{ needs.build.outputs.release_version }}
+          path: dist
+
+      - name: Verify SHA256SUMS before attestation
+        run: |
+          (
+            cd dist
+            sha256sum -c SHA256SUMS
+          )
+
       - name: Attest build provenance
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: |
-            dist/${{ env.JACQUARD_ARCHIVE }}
-            dist/${{ env.COCKPIT_ARCHIVE }}
+            dist/${{ needs.build.outputs.jacquard_archive }}
+            dist/${{ needs.build.outputs.cockpit_archive }}
             dist/SHA256SUMS
             dist/RELEASE-EVIDENCE.json
             dist/fast-receipts.ndjson
 
-      - name: Upload release bundle artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: jacquard-release-${{ env.RELEASE_VERSION }}
-          path: dist/
-
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
+          body_path: docs/releases/${{ needs.build.outputs.release_version }}.md
+          fail_on_unmatched_files: true
+          overwrite_files: false
           files: |
-            dist/${{ env.JACQUARD_ARCHIVE }}
-            dist/${{ env.COCKPIT_ARCHIVE }}
+            dist/${{ needs.build.outputs.jacquard_archive }}
+            dist/${{ needs.build.outputs.cockpit_archive }}
             dist/SHA256SUMS
             dist/RELEASE-EVIDENCE.json
             dist/fast-receipts.ndjson
